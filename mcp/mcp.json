@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "browser": {
+      "command": "${LOCARYN_MORPH_ROOT}/bin/locaryn-browser-mcp",
+      "args": [],
+      "env": {
+        "RUST_LOG": "warn"
+      },
+      "transport": "stdio",
+      "auto_start": true
+    }
+  }
+}

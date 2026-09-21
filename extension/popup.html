@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Locaryn</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f6f7f6; --fg:#1b211e; --mut:#5f6b64; --line:#d5dbd7; --ok:#2f7a55; --bad:#b3413b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161b18; --fg:#e8eeea; --mut:#93a098; --line:#2c352f; --ok:#6fcf9d; --bad:#e07872; } }
+  body { margin:0; width:320px; padding:16px; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, sans-serif; }
+  h1 { font-size:15px; margin:0 0 4px; }
+  .state { display:flex; align-items:center; gap:8px; margin:0 0 14px; color:var(--mut); }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); }
+  .dot.on { background:var(--ok); }
+  label { display:block; margin:10px 0 4px; font-size:12px; color:var(--mut); }
+  input[type=text], input[type=number] { box-sizing:border-box; width:100%; min-height:40px; padding:0 10px; border:1px solid var(--line);
+    border-radius:8px; background:transparent; color:inherit; font:inherit; }
+  .check { display:flex; align-items:center; gap:8px; min-height:44px; margin-top:6px; color:var(--fg); font-size:13px; }
+  button { min-height:44px; width:100%; margin-top:10px; border:1px solid var(--line); border-radius:8px; background:transparent;
+    color:inherit; font:inherit; cursor:pointer; }
+  button.primary { background:var(--ok); border-color:var(--ok); color:#fff; }
+  button:focus-visible, input:focus-visible { outline:2px solid var(--ok); outline-offset:2px; }
+  small { color:var(--mut); display:block; margin-top:8px; }
+</style>
+</head>
+<body>
+  <h1>Locaryn — contrôle du navigateur</h1>
+  <p class="state"><span class="dot" id="dot"></span><span id="state">…</span></p>
+  <label for="token">Code d'appairage (donné par Locaryn : demandez « browser_status »)</label>
+  <input id="token" type="text" autocomplete="off" spellcheck="false">
+  <label for="port">Port local</label>
+  <input id="port" type="number" min="1024" max="65535">
+  <label class="check"><input id="group" type="checkbox"> Regrouper les onglets contrôlés (groupe « Locaryn »)</label>
+  <button class="primary" id="save" type="button">Enregistrer et connecter</button>
+  <button id="unblock" type="button" hidden>Réautoriser les onglets arrêtés</button>
+  <small>Le contrôle ne passe que par cette machine (127.0.0.1). Le bouton Stop sur la page reprend la main immédiatement.</small>
+  <script src="popup.js"></script>
+</body>
+</html>

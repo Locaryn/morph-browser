@@ -1,0 +1,25 @@
+[package]
+name = "locaryn-plugin-browser"
+version = "0.1.0"
+edition = "2021"
+description = "Official Locaryn Extension: contrôle complet du navigateur (tous les onglets), décisions rapides par Laya"
+license = "Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "locaryn-browser-mcp"
+path = "src/bin/browser_mcp.rs"
+
+[dependencies]
+base64 = "0.22"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+getrandom = "0.2"
+locaryn-morph-kit = { path = "vendor/morph-kit" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.24"
+
+[workspace]

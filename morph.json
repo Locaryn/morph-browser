@@ -1,0 +1,60 @@
+{
+  "$schema": "https://locaryn.dev/schema/morph.json/v0.1",
+  "apiVersion": "0.1",
+  "name": "morph-browser",
+  "version": "0.1.0-beta.1",
+  "description": "Pilote tout le navigateur, pas un seul onglet : retrouve les onglets déjà ouverts, lit, clique, saisit, navigue. Un cadre animé et une pastille signalent chaque onglet contrôlé, avec un bouton Stop. Les décisions rapides (quel élément, quel onglet, action risquée ?) passent par Laya.",
+  "author": "Locaryn Team",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/Locaryn/morph-browser",
+  "repository": "https://github.com/Locaryn/morph-browser",
+  "keywords": [
+    "browser",
+    "automation",
+    "tabs",
+    "chrome",
+    "edge",
+    "brave",
+    "laya"
+  ],
+  "permissions": {
+    "mcp": {
+      "reason": "Lancer le serveur de contrôle du navigateur fourni par l'extension."
+    },
+    "files.read": {
+      "reason": "Lire son code d'appairage et ses réglages."
+    },
+    "files.write": {
+      "reason": "Écrire le code d'appairage et les captures d'écran demandées."
+    },
+    "network": {
+      "reason": "Écouter en local (127.0.0.1) l'extension du navigateur, et télécharger le modèle Laya au premier usage."
+    }
+  },
+  "components": {
+    "skills": [
+      "SKILL.md"
+    ],
+    "mcp": "mcp/mcp.json"
+  },
+  "capabilities": [
+    "browser-control"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macos"
+  ],
+  "beta": true,
+  "stability": "untested",
+  "versions": [
+    {
+      "version": "0.1.0-beta.1",
+      "is_beta": true,
+      "summary": "Première version bêta : contrôle de tous les onglets, cadre animé, Stop, décisions par Laya",
+      "tag": "v0.1.0-beta.1",
+      "released_at": "2026-09-21",
+      "install_source": "Locaryn/morph-browser#v0.1.0-beta.1"
+    }
+  ]
+}
