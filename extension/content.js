@@ -4,7 +4,11 @@
   if (window.__locarynLoaded) return;
   window.__locarynLoaded = true;
 
-  const IDLE_MS = 10000;
+  // Filet de sécurité si `browser_release` n'est jamais appelé : large,
+  // volontairement, pour qu'un temps de réflexion entre deux outils ne
+  // fasse jamais disparaître puis réapparaître le cadre (l'appel explicite
+  // reste la façon normale de terminer).
+  const IDLE_MS = 180000;
   const TITLE_MARK = "◉ ";
   const INTERACTIVE =
     'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],' +
