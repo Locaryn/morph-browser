@@ -17,6 +17,30 @@ Ce qui limite le risque :
 
 À ne pas faire : piloter un navigateur où sont ouverts des comptes sensibles ; laisser tourner sans surveillance ; installer l'extension dans votre profil principal si vous pouvez créer un **profil dédié** (c'est le meilleur réglage : le modèle n'y voit que ce que vous y connectez) ; croire qu'une page web est digne de confiance (elle peut contenir des consignes destinées au modèle).
 
+## Installation en une commande
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/Locaryn/morph-browser/main/install.ps1 | iex
+```
+
+**Linux / macOS**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Locaryn/morph-browser/main/install.sh | bash
+```
+
+Le script télécharge la dernière release, **vérifie son empreinte SHA-256**, l'installe dans votre dossier utilisateur (aucun droit administrateur), crée le code d'appairage, puis affiche — et copie dans le presse-papiers — le bloc MCP à coller :
+
+- **Freebuff** : `+ MCP`, collez le bloc.
+- **Antigravity** : menu des serveurs MCP → configuration brute → collez le bloc.
+- **Claude Desktop / Claude Code** : voir plus bas, ou, sous Windows, `-Client claude` (ajoute l'entrée après sauvegarde du fichier).
+
+Il reste **une seule étape manuelle**, imposée par les navigateurs : charger l'extension (le script affiche le dossier exact et le code à coller dans son icône). Vous pouvez lire les scripts avant de les lancer : [install.ps1](https://github.com/Locaryn/morph-browser/blob/main/install.ps1), [install.sh](https://github.com/Locaryn/morph-browser/blob/main/install.sh).
+
+Le reste de cette page détaille chaque étape, pour qui préfère tout faire à la main.
+
 ## 1. Télécharger et vérifier
 
 1. Téléchargez l'archive de votre système (`morph-browser-v<version>-windows-x86_64.zip`, `…-linux-x86_64.zip`, `…-macos-aarch64.zip` ou `…-macos-x86_64.zip`) depuis <https://github.com/Locaryn/morph-browser/releases>, et nulle part ailleurs.
@@ -75,7 +99,7 @@ Ajoutez l'entrée aux existantes, rechargez la liste des serveurs, laissez la va
 
 ### Freebuff
 
-Sa documentation (v0.0.115) ne mentionne pas MCP et je ne l'ai pas vérifié : voyez <https://codebuff.com/docs>. À défaut, utilisez morph-browser depuis Claude ou Antigravity. N'inventez pas de réglage.
+Dans Freebuff : `+ MCP`, puis collez le bloc affiché par le script (ou la configuration JSON de Claude Desktop ci-dessus). Même forme, aucun autre réglage.
 
 ### Un autre client MCP
 

@@ -4,7 +4,16 @@ Contrôle **tout** le navigateur — pas seulement l'onglet ouvert : liste des f
 
 Navigateurs : Chrome, Edge, Brave, Arc, Vivaldi, Opera (Chromium ≥ 116) et Firefox (≥ 128). Safari n'est pas pris en charge.
 
-> **Autres outils d'IA** (Claude Desktop, Claude Code, Antigravity…) : ce morph est un serveur MCP autonome. Installation sûre et réglages recommandés : [docs/INSTALL-AUTRES-OUTILS-IA.md](docs/INSTALL-AUTRES-OUTILS-IA.md).
+## Installer en une commande
+
+```powershell
+irm https://raw.githubusercontent.com/Locaryn/morph-browser/main/install.ps1 | iex
+```
+
+Linux / macOS : `curl -fsSL https://raw.githubusercontent.com/Locaryn/morph-browser/main/install.sh | bash`
+
+Télécharge la dernière release, vérifie son empreinte SHA-256, l'installe sans droits administrateur et affiche le bloc MCP à coller dans Freebuff (`+ MCP`), Antigravity ou Claude. Détails et réglages de sécurité : [docs/INSTALL-AUTRES-OUTILS-IA.md](docs/INSTALL-AUTRES-OUTILS-IA.md).
+
 
 ## Ce que voit l'utilisateur
 
