@@ -4,6 +4,8 @@ Contrôle **tout** le navigateur — pas seulement l'onglet ouvert : liste des f
 
 Navigateurs : Chrome, Edge, Brave, Arc, Vivaldi, Opera (Chromium ≥ 116) et Firefox (≥ 128). Safari n'est pas pris en charge.
 
+> **Autres outils d'IA** (Claude Desktop, Claude Code, Antigravity…) : ce morph est un serveur MCP autonome. Installation sûre et réglages recommandés : [docs/INSTALL-AUTRES-OUTILS-IA.md](docs/INSTALL-AUTRES-OUTILS-IA.md).
+
 ## Ce que voit l'utilisateur
 
 - **Un cadre animé** fait le tour de l'onglet contrôlé, avec une pastille « Locaryn contrôle cet onglet » et un bouton **Stop**.
@@ -18,7 +20,7 @@ Navigateurs : Chrome, Edge, Brave, Arc, Vivaldi, Opera (Chromium ≥ 116) et Fir
 2. Dans le navigateur :
    - **Chrome, Edge, Brave, Arc, Vivaldi, Opera** : `chrome://extensions` (ou `edge://extensions`…) → mode développeur → **Charger l'extension non empaquetée** → dossier `extension/` du morph.
    - **Firefox** : `about:debugging#/runtime/this-firefox` → **Charger un module complémentaire temporaire** → fichier `extension-firefox/manifest.json`. Puis, dans `about:addons` → l'extension → Autorisations, accordez l'accès à **tous les sites** : Firefox ne l'accorde pas à l'installation, et sans lui l'extension ne peut lire aucune page. Un module temporaire disparaît à la fermeture de Firefox ; un module permanent exige une extension signée (publication sur addons.mozilla.org, pas encore faite).
-3. Demander à Locaryn `browser_status` : il rend le code d'appairage. Le coller dans l'icône de l'extension, **Enregistrer**.
+3. Lire le code d'appairage dans le fichier `pairing-token` du dossier de données (`%APPDATA%\locaryn\morph-browser\` sous Windows) — `browser_status` le rend aussi, mais sa réponse passe par le modèle. Le coller dans l'icône de l'extension, **Enregistrer**.
 
 Le pont refuse toute origine qui n'est pas une extension de navigateur et tout client sans le code d'appairage.
 

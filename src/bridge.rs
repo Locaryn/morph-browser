@@ -263,7 +263,22 @@ pub fn load_or_create_token() -> Result<String, String> {
     getrandom::getrandom(&mut octets).map_err(|e| format!("aléa système : {e}"))?;
     let token: String = octets.iter().map(|b| format!("{b:02x}")).collect();
     std::fs::write(&chemin, &token).map_err(|e| format!("écriture du code : {e}"))?;
+    reserve_au_proprietaire(&chemin)?;
     Ok(token)
+}
+
+/// Le code ouvre le navigateur à qui le connaît : sous Unix, lui seul le lit.
+/// (Sous Windows, le dossier de profil de l'utilisateur fait déjà ce travail.)
+#[cfg(unix)]
+fn reserve_au_proprietaire(chemin: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(chemin, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("droits du code d'appairage : {e}"))
+}
+
+#[cfg(not(unix))]
+fn reserve_au_proprietaire(_chemin: &std::path::Path) -> Result<(), String> {
+    Ok(())
 }
 
 fn data_dir() -> PathBuf {

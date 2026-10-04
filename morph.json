@@ -2,7 +2,7 @@
   "$schema": "https://locaryn.dev/schema/morph.json/v0.1",
   "apiVersion": "0.1",
   "name": "morph-browser",
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "description": "Pilote tout le navigateur, pas un seul onglet : retrouve les onglets déjà ouverts, lit, clique, saisit, navigue. Un cadre animé et une pastille signalent chaque onglet contrôlé, avec un bouton Stop. Les décisions rapides (quel élément, quel onglet, action risquée ?) passent par Laya.",
   "author": "Locaryn Team",
   "license": "Apache-2.0",
@@ -48,6 +48,14 @@
   "beta": true,
   "stability": "untested",
   "versions": [
+    {
+      "version": "0.1.0-beta.4",
+      "is_beta": true,
+      "summary": "Documentation d'installation sûre pour d'autres outils d'IA ; code d'appairage lisible par vous seul sous Linux/macOS et à lire dans son fichier plutôt que via le modèle ; empreintes SHA-256 publiées",
+      "tag": "v0.1.0-beta.4",
+      "released_at": "2026-10-04",
+      "install_source": "Locaryn/morph-browser#v0.1.0-beta.4"
+    },
     {
       "version": "0.1.0-beta.3",
       "is_beta": true,
