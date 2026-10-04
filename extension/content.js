@@ -1,6 +1,7 @@
 // Script injecté dans la page : lecture, actions, et signalisation visible du contrôle.
 (() => {
   "use strict";
+  const api = typeof browser !== "undefined" ? browser : chrome; // Firefox expose `browser`, les navigateurs Chromium `chrome`
   if (window.__locarynLoaded) return;
   window.__locarynLoaded = true;
 
@@ -423,14 +424,14 @@
       if (host) host.remove();
       host = root = null;
       unmarkTab();
-      chrome.runtime.sendMessage({ type: "released" }).catch(() => {});
+      api.runtime.sendMessage({ type: "released" }).catch(() => {});
     }
 
     function stop() {
       const shell = document.createElement("locaryn-overlay");
       const r = shell.attachShadow({ mode: "closed" });
       r.innerHTML = `<style>${CSS}</style><div class="toast">Contrôle arrêté — vous avez repris la main</div>`;
-      chrome.runtime.sendMessage({ type: "user_stop" }).catch(() => {});
+      api.runtime.sendMessage({ type: "user_stop" }).catch(() => {});
       off();
       document.documentElement.appendChild(shell);
       setTimeout(() => shell.remove(), 3500);
@@ -463,7 +464,7 @@
 
   // ── Messages de l'extension ───────────────────────────────────────────────
 
-  chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+  api.runtime.onMessage.addListener((msg, _sender, reply) => {
     if (msg.type === "overlay") {
       if (msg.on) overlay.on(msg.label);
       else overlay.off();

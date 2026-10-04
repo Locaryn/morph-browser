@@ -1,5 +1,6 @@
 // Service worker : relie le serveur MCP local (WebSocket) aux onglets du navigateur.
 "use strict";
+const api = typeof browser !== "undefined" ? browser : chrome; // Firefox expose `browser`, les navigateurs Chromium `chrome`
 
 const DEFAULT_PORT = 17421;
 const KEEPALIVE_MS = 20000;
@@ -20,15 +21,15 @@ const state = {
 // ── Connexion au serveur ────────────────────────────────────────────────────
 
 async function loadConfig() {
-  const c = await chrome.storage.local.get(["token", "port", "groupTabs"]);
+  const c = await api.storage.local.get(["token", "port", "groupTabs"]);
   state.token = (c.token || "").trim();
   state.port = Number(c.port) || DEFAULT_PORT;
   state.groupTabs = Boolean(c.groupTabs);
 }
 
 function setBadge(text) {
-  chrome.action.setBadgeText({ text });
-  chrome.action.setBadgeBackgroundColor({ color: "#3e8c66" });
+  api.action.setBadgeText({ text });
+  api.action.setBadgeBackgroundColor({ color: "#3e8c66" });
 }
 
 function connect() {
@@ -48,7 +49,7 @@ function connect() {
       type: "hello",
       token: state.token,
       browser: navigator.userAgent,
-      version: chrome.runtime.getManifest().version,
+      version: api.runtime.getManifest().version,
     }));
   };
   ws.onmessage = (ev) => onServerMessage(ws, ev.data);
@@ -98,13 +99,13 @@ function notifyServer(payload) {
   }
 }
 
-chrome.alarms.create("keepalive", { periodInMinutes: 0.5 });
-chrome.alarms.onAlarm.addListener(() => connect());
+api.alarms.create("keepalive", { periodInMinutes: 0.5 });
+api.alarms.onAlarm.addListener(() => connect());
 setInterval(() => {
   if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ type: "ping" }));
 }, KEEPALIVE_MS);
 
-chrome.storage.onChanged.addListener(async () => {
+api.storage.onChanged.addListener(async () => {
   await loadConfig();
   if (state.ws) state.ws.close();
   connect();
@@ -132,15 +133,15 @@ function describeTab(t) {
 }
 
 async function resolveTab(p) {
-  if (p.tab_id !== undefined && p.tab_id !== null) return chrome.tabs.get(Number(p.tab_id));
+  if (p.tab_id !== undefined && p.tab_id !== null) return api.tabs.get(Number(p.tab_id));
   if (state.lastTabId !== null) {
     try {
-      return await chrome.tabs.get(state.lastTabId);
+      return await api.tabs.get(state.lastTabId);
     } catch (e) {
       state.lastTabId = null; // l'onglet a été fermé
     }
   }
-  const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const [t] = await api.tabs.query({ active: true, lastFocusedWindow: true });
   if (!t) throw new Error("Aucun onglet actif.");
   return t;
 }
@@ -153,14 +154,14 @@ function refuseIfBlocked(tabId) {
 
 async function ensureContent(tabId) {
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+    await api.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
   } catch (e) {
     throw new Error(`Cet onglet ne peut pas être piloté (page protégée du navigateur ?) : ${e.message}`);
   }
 }
 
 async function sendToTab(tabId, message) {
-  const r = await chrome.tabs.sendMessage(tabId, message);
+  const r = await api.tabs.sendMessage(tabId, message);
   if (r && r.error) throw new Error(r.error);
   return r;
 }
@@ -168,12 +169,12 @@ async function sendToTab(tabId, message) {
 async function markControlled(tab, label) {
   state.lastTabId = tab.id;
   state.live.add(tab.id);
-  chrome.action.setBadgeText({ tabId: tab.id, text: "◉" });
+  api.action.setBadgeText({ tabId: tab.id, text: "◉" });
   await sendToTab(tab.id, { type: "overlay", on: true, label });
   if (state.groupTabs && tab.groupId === -1) {
     try {
-      const gid = await chrome.tabs.group({ tabIds: [tab.id] });
-      await chrome.tabGroups.update(gid, { title: "Locaryn", color: "green" });
+      const gid = await api.tabs.group({ tabIds: [tab.id] });
+      await api.tabGroups.update(gid, { title: "Locaryn", color: "green" });
     } catch (e) {
       console.warn("Locaryn : groupe d'onglets", e);
     }
@@ -201,7 +202,7 @@ async function pageCommand(p, cmd, label) {
 function waitComplete(tabId) {
   return new Promise((resolve) => {
     const done = () => {
-      chrome.tabs.onUpdated.removeListener(on);
+      api.tabs.onUpdated.removeListener(on);
       clearTimeout(timer);
       resolve();
     };
@@ -209,11 +210,11 @@ function waitComplete(tabId) {
       if (id === tabId && info.status === "complete") done();
     };
     const timer = setTimeout(done, NAV_TIMEOUT_MS);
-    chrome.tabs.onUpdated.addListener(on);
+    api.tabs.onUpdated.addListener(on);
   });
 }
 
-chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+api.tabs.onUpdated.addListener(async (tabId, info) => {
   // Le cadre survit à une navigation tant que l'onglet reste contrôlé.
   if (info.status !== "complete" || !state.live.has(tabId) || state.blocked.has(tabId)) return;
   try {
@@ -224,7 +225,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
   }
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
+api.tabs.onRemoved.addListener((tabId) => {
   state.blocked.delete(tabId);
   state.live.delete(tabId);
   if (state.lastTabId === tabId) state.lastTabId = null;
@@ -233,20 +234,20 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 async function screenshot(p) {
   const tab = await resolveTab(p);
   refuseIfBlocked(tab.id);
-  const [previous] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+  const [previous] = await api.tabs.query({ active: true, windowId: tab.windowId });
   const changed = previous && previous.id !== tab.id;
   if (changed) {
-    await chrome.tabs.update(tab.id, { active: true });
+    await api.tabs.update(tab.id, { active: true });
     await new Promise((r) => setTimeout(r, 300));
   }
   try {
     await ensureContent(tab.id);
     await sendToTab(tab.id, { type: "overlay_peek", hidden: true });
-    const data_url = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+    const data_url = await api.tabs.captureVisibleTab(tab.windowId, { format: "png" });
     await sendToTab(tab.id, { type: "overlay_peek", hidden: false });
     return { tab_id: tab.id, data_url };
   } finally {
-    if (changed) await chrome.tabs.update(previous.id, { active: true });
+    if (changed) await api.tabs.update(previous.id, { active: true });
   }
 }
 
@@ -255,7 +256,7 @@ async function evaluate(p) {
   refuseIfBlocked(tab.id);
   await ensureContent(tab.id);
   await markControlled(tab, "Script");
-  const [res] = await chrome.scripting.executeScript({
+  const [res] = await api.scripting.executeScript({
     target: { tabId: tab.id },
     world: "MAIN",
     args: [String(p.code || "")],
@@ -277,7 +278,7 @@ async function evaluate(p) {
 
 const METHODS = {
   async tabs_list(p) {
-    const tabs = await chrome.tabs.query(p.window_id ? { windowId: Number(p.window_id) } : {});
+    const tabs = await api.tabs.query(p.window_id ? { windowId: Number(p.window_id) } : {});
     const q = (p.query || "").toLowerCase();
     return {
       tabs: tabs
@@ -286,14 +287,14 @@ const METHODS = {
     };
   },
   async tab_focus(p) {
-    const t = await chrome.tabs.update(Number(p.tab_id), { active: true });
-    await chrome.windows.update(t.windowId, { focused: true });
+    const t = await api.tabs.update(Number(p.tab_id), { active: true });
+    await api.windows.update(t.windowId, { focused: true });
     return { tab: describeTab(t) };
   },
   async tab_open(p) {
-    const t = await chrome.tabs.create({ url: p.url, active: !p.background });
+    const t = await api.tabs.create({ url: p.url, active: !p.background });
     await waitComplete(t.id);
-    const fresh = await chrome.tabs.get(t.id);
+    const fresh = await api.tabs.get(t.id);
     if (!p.no_control) {
       try {
         await ensureContent(fresh.id);
@@ -305,23 +306,23 @@ const METHODS = {
     return { tab: describeTab(fresh) };
   },
   async tab_close(p) {
-    await chrome.tabs.remove(Number(p.tab_id));
+    await api.tabs.remove(Number(p.tab_id));
     return { closed: Number(p.tab_id) };
   },
   async navigate(p) {
     const tab = await resolveTab(p);
     refuseIfBlocked(tab.id);
-    if (p.action === "back") await chrome.tabs.goBack(tab.id);
-    else if (p.action === "forward") await chrome.tabs.goForward(tab.id);
-    else if (p.action === "reload") await chrome.tabs.reload(tab.id);
-    else if (p.url) await chrome.tabs.update(tab.id, { url: p.url });
+    if (p.action === "back") await api.tabs.goBack(tab.id);
+    else if (p.action === "forward") await api.tabs.goForward(tab.id);
+    else if (p.action === "reload") await api.tabs.reload(tab.id);
+    else if (p.url) await api.tabs.update(tab.id, { url: p.url });
     else throw new Error("navigate : donnez `url` ou `action` (back, forward, reload).");
     state.lastTabId = tab.id;
     await waitComplete(tab.id);
-    return { tab: describeTab(await chrome.tabs.get(tab.id)) };
+    return { tab: describeTab(await api.tabs.get(tab.id)) };
   },
   async history_search(p) {
-    const items = await chrome.history.search({ text: p.query || "", maxResults: Number(p.max) || 20, startTime: 0 });
+    const items = await api.history.search({ text: p.query || "", maxResults: Number(p.max) || 20, startTime: 0 });
     return { items: items.map((i) => ({ title: i.title, url: i.url, visits: i.visitCount, last_visit: i.lastVisitTime })) };
   },
   async release(p) {
@@ -332,7 +333,7 @@ const METHODS = {
     } catch (e) {
       console.debug("Locaryn : rien à libérer", e.message);
     }
-    chrome.action.setBadgeText({ tabId: id, text: "" });
+    api.action.setBadgeText({ tabId: id, text: "" });
     state.live.delete(id);
     return { released: id };
   },
@@ -356,18 +357,18 @@ async function dispatch(method, params) {
 
 // ── Messages venant des pages et de la fenêtre de l'extension ───────────────
 
-chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+api.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === "user_stop" && sender.tab) {
     const id = sender.tab.id;
     state.blocked.add(id);
     state.live.delete(id);
     if (state.lastTabId === id) state.lastTabId = null;
-    chrome.action.setBadgeText({ tabId: id, text: "" });
+    api.action.setBadgeText({ tabId: id, text: "" });
     notifyServer({ event: "user_stop", tab_id: id });
     reply({ ok: true });
   } else if (msg.type === "released" && sender.tab) {
     state.live.delete(sender.tab.id);
-    chrome.action.setBadgeText({ tabId: sender.tab.id, text: "" });
+    api.action.setBadgeText({ tabId: sender.tab.id, text: "" });
     reply({ ok: true });
   } else if (msg.type === "popup_status") {
     reply({ connected: state.connected, blocked: [...state.blocked], hasToken: Boolean(state.token) });

@@ -1,9 +1,10 @@
 "use strict";
+const api = typeof browser !== "undefined" ? browser : chrome; // Firefox expose `browser`, les navigateurs Chromium `chrome`
 
 const $ = (id) => document.getElementById(id);
 
 async function refresh() {
-  const s = await chrome.runtime.sendMessage({ type: "popup_status" });
+  const s = await api.runtime.sendMessage({ type: "popup_status" });
   $("dot").classList.toggle("on", s.connected);
   $("state").textContent = s.connected
     ? "Connecté à Locaryn"
@@ -14,7 +15,7 @@ async function refresh() {
 }
 
 async function init() {
-  const c = await chrome.storage.local.get(["token", "port", "groupTabs"]);
+  const c = await api.storage.local.get(["token", "port", "groupTabs"]);
   $("token").value = c.token || "";
   $("port").value = c.port || 17421;
   $("group").checked = Boolean(c.groupTabs);
@@ -22,7 +23,7 @@ async function init() {
 }
 
 $("save").addEventListener("click", async () => {
-  await chrome.storage.local.set({
+  await api.storage.local.set({
     token: $("token").value.trim(),
     port: Number($("port").value) || 17421,
     groupTabs: $("group").checked,
@@ -31,7 +32,7 @@ $("save").addEventListener("click", async () => {
 });
 
 $("unblock").addEventListener("click", async () => {
-  await chrome.runtime.sendMessage({ type: "unblock_all" });
+  await api.runtime.sendMessage({ type: "unblock_all" });
   refresh();
 });
 

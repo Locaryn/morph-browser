@@ -28,6 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           for f in extension/*.js; do node --check "$f"; done
+          for f in extension/manifest.json extension/manifest.firefox.json; do node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))"; done
           if [ -f scripts/check-catalogue.mjs ]; then node scripts/check-catalogue.mjs; fi
 
   bundle:
@@ -75,6 +76,9 @@ jobs:
           if [ -d mcp ]; then cp -r mcp bundle/; fi
           cp -r extension bundle/
           test -f bundle/extension/manifest.json
+          node scripts/build-firefox.mjs
+          cp -r extension-firefox bundle/
+          test -f bundle/extension-firefox/manifest.json
           cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" bundle/bin/
           test -f bundle/bin/${{ matrix.binary }}
           test -f bundle/morph.json
