@@ -96,10 +96,11 @@ impl Browser {
             "extension_connected": connected,
             "browser": self.bridge.hello().await.and_then(|h| h.get("browser").cloned()),
             "port": self.bridge.port,
-            "laya": {
-                "loaded": self.laya.is_running().await,
+            // Le modèle de décision local reste un détail interne : le
+            // modèle de conversation n'a pas à le nommer à l'utilisateur.
+            "decisions": {
+                "ready": self.laya.is_running().await,
                 "last_error": self.laya.last_error().await,
-                "note": "Laya se charge au premier usage (quelques secondes à quelques dizaines)."
             },
             "tabs_stopped_by_user": self.bridge.blocked_tabs().await,
         });
@@ -284,7 +285,7 @@ impl Browser {
                 "needs_confirmation": true,
                 "action": format!("{verb} : {element}"),
                 "page": target["page"],
-                "risk": { "lexical": risk.lexical, "laya": risk.laya },
+                "risk": { "lexical": risk.lexical, "estimate": risk.laya },
                 "next": "Action non exécutée. Décrivez-la à l'utilisateur et demandez son accord ; \
                          s'il accepte, rappelez l'outil avec confirmed=true."
             })
@@ -326,7 +327,7 @@ impl Browser {
                 &format!("L'objectif « {goal} » est-il atteint sur cette page ?"),
             )
             .await
-            .map_err(|e| format!("Laya indisponible, impossible d'estimer : {e}"))?;
+            .map_err(|e| format!("Estimation locale indisponible : {e}"))?;
         Ok(json!({
             "probability": p,
             "reached": p >= 0.5,
@@ -340,8 +341,8 @@ impl Browser {
         Ok(json!({
             "risky": risk.risky(),
             "lexical": risk.lexical,
-            "laya_probability": risk.laya,
-            "laya_error": if risk.laya.is_none() { self.laya.last_error().await } else { None },
+            "probability": risk.laya,
+            "estimate_error": if risk.laya.is_none() { self.laya.last_error().await } else { None },
         }))
     }
 }
@@ -433,9 +434,9 @@ fn ref_props() -> Value {
 
 fn tab_tools() -> Vec<Value> {
     vec![
-        tool("browser_status", "État du pont avec le navigateur : extension connectée, Laya chargé, onglets arrêtés par l'utilisateur. Si l'extension n'est pas connectée, donne le code d'appairage et les étapes d'installation.", json!({}), &[]),
+        tool("browser_status", "État du pont avec le navigateur : extension connectée, onglets arrêtés par l'utilisateur. Si l'extension n'est pas connectée, donne le code d'appairage et les étapes d'installation.", json!({}), &[]),
         tool("browser_list_tabs", "Liste tous les onglets ouverts, dans toutes les fenêtres (titre, adresse, actif, épinglé, son en cours). `query` filtre par titre ou adresse.", json!({ "query": str_prop("Filtre sur le titre ou l'adresse"), "window_id": { "type": "integer" } }), &[]),
-        tool("browser_find_tab", "Retrouve, parmi les onglets déjà ouverts, celui qui correspond à une description (« le devis chez Leroy Merlin », « ma boîte mail »). Décidé par Laya.", json!({ "description": str_prop("Ce que l'onglet contient ou montre") }), &["description"]),
+        tool("browser_find_tab", "Retrouve, parmi les onglets déjà ouverts, celui qui correspond à une description (« le devis chez Leroy Merlin », « ma boîte mail »).", json!({ "description": str_prop("Ce que l'onglet contient ou montre") }), &["description"]),
         tool("browser_focus_tab", "Met un onglet au premier plan (et sa fenêtre).", json!({ "tab_id": tab_prop() }), &["tab_id"]),
         tool("browser_open_tab", "Ouvre une adresse dans un nouvel onglet.", json!({ "url": str_prop("Adresse complète"), "background": { "type": "boolean", "description": "Ne pas prendre le focus" } }), &["url"]),
         tool("browser_close_tab", "Ferme un onglet.", json!({ "tab_id": tab_prop() }), &["tab_id"]),
@@ -448,7 +449,7 @@ fn tab_tools() -> Vec<Value> {
 fn page_tools() -> Vec<Value> {
     vec![
         tool("browser_snapshot", "Lit un onglet : titre, adresse, éléments interactifs numérotés (ref), texte visible, défilement. Base de toute action.", json!({ "tab_id": tab_prop(), "max_elements": { "type": "integer" }, "text_chars": { "type": "integer" } }), &[]),
-        tool("browser_find_element", "Trouve l'élément à actionner pour un objectif (« ajouter au panier », « champ de recherche »). Laya départage les candidats de la page ; rend le meilleur, sa confiance et des alternatives.", json!({ "tab_id": tab_prop(), "goal": str_prop("Ce qu'on veut faire") }), &["goal"]),
+        tool("browser_find_element", "Trouve l'élément à actionner pour un objectif (« ajouter au panier », « champ de recherche »). Rend le meilleur, sa confiance et des alternatives.", json!({ "tab_id": tab_prop(), "goal": str_prop("Ce qu'on veut faire") }), &["goal"]),
         tool("browser_click", "Clique un élément (clic gauche par défaut). Une action jugée irréversible (achat, suppression, envoi) n'est pas exécutée : la réponse demande de confirmer avec l'utilisateur, puis de rappeler avec confirmed=true.", json!({ "tab_id": tab_prop(), "ref": { "type": "integer" }, "x": { "type": "number" }, "y": { "type": "number" }, "button": { "type": "string", "enum": ["left", "right"] }, "double": { "type": "boolean" }, "confirmed": { "type": "boolean", "description": "true seulement après accord explicite de l'utilisateur" } }), &[]),
         tool("browser_type", "Saisit du texte dans un champ (remplace le contenu sauf clear=false). submit=true valide ensuite ; cette validation est soumise au même garde-fou que browser_click.", json!({ "tab_id": tab_prop(), "ref": { "type": "integer" }, "text": str_prop("Texte à saisir"), "clear": { "type": "boolean" }, "submit": { "type": "boolean" }, "confirmed": { "type": "boolean" } }), &["ref", "text"]),
         tool("browser_press_key", "Envoie une touche à l'élément actif ou à `ref` : Enter, Escape, Tab, ArrowDown, Control+a…", json!({ "tab_id": tab_prop(), "ref": { "type": "integer" }, "key": str_prop("Touche, avec modificateurs séparés par +") }), &["key"]),
@@ -463,7 +464,7 @@ fn page_tools() -> Vec<Value> {
 
 fn judgement_tools() -> Vec<Value> {
     vec![
-        tool("browser_goal_reached", "Estime, par Laya, si l'objectif est atteint d'après le texte de la page. Une probabilité, pas une preuve.", json!({ "tab_id": tab_prop(), "goal": str_prop("L'objectif à vérifier") }), &["goal"]),
+        tool("browser_goal_reached", "Estime si l'objectif est atteint d'après le texte de la page. Une probabilité, pas une preuve.", json!({ "tab_id": tab_prop(), "goal": str_prop("L'objectif à vérifier") }), &["goal"]),
         tool("browser_assess_action", "Juge, avant d'agir, si une action décrite est irréversible ou lourde de conséquences.", json!({ "action": str_prop("L'action envisagée") }), &["action"]),
     ]
 }

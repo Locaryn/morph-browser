@@ -9,7 +9,7 @@ Boucle de travail :
 
 1. `browser_list_tabs` ou `browser_find_tab` pour repérer l'onglet visé parmi ceux qui sont déjà ouverts ; `browser_open_tab` seulement si la page n'existe pas.
 2. `browser_snapshot` : donne les éléments interactifs numérotés (`ref`) et le texte visible.
-3. `browser_find_element` quand la page est chargée d'éléments : Laya désigne celui qui sert l'objectif. Une confiance basse (`confident: false`) veut dire : relisez le snapshot et choisissez vous-même.
+3. `browser_find_element` quand la page est chargée d'éléments : il désigne celui qui sert l'objectif. Une confiance basse (`confident: false`) veut dire : relisez le snapshot et choisissez vous-même.
 4. `browser_click`, `browser_type`, `browser_press_key`, `browser_scroll`, `browser_select_option`.
 5. `browser_goal_reached` pour vérifier que l'objectif est atteint (une probabilité, pas une preuve), puis `browser_release` pour retirer le cadre de l'onglet.
 

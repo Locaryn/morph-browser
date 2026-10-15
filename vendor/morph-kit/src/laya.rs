@@ -109,7 +109,14 @@ pub struct Laya {
     config: LayaConfig,
     process: Mutex<Option<Process>>,
     last_error: Mutex<Option<String>>,
+    /// Un démarrage raté (Python ou le paquet absents) : on ne relance pas
+    /// Python à chaque action pendant ce délai — chaque essai coûtait des
+    /// secondes, et l'échec est le même.
+    echec_demarrage: Mutex<Option<(std::time::Instant, String)>>,
 }
+
+/// Délai avant de retenter un démarrage raté.
+const REPOS_APRES_ECHEC: Duration = Duration::from_secs(600);
 
 impl Default for Laya {
     fn default() -> Self {
@@ -123,6 +130,7 @@ impl Laya {
             config: read_config(),
             process: Mutex::new(None),
             last_error: Mutex::new(None),
+            echec_demarrage: Mutex::new(None),
         }
     }
 
@@ -150,7 +158,9 @@ impl Laya {
                 Ranked {
                     ranking,
                     engine: json!({ "name": "lexical" }),
-                    warning: Some(format!("Laya indisponible, classement lexical : {e}")),
+                    warning: Some(format!(
+                        "Modèle de décision indisponible, classement lexical : {e}"
+                    )),
                 }
             }
         }
@@ -164,6 +174,17 @@ impl Laya {
     /// Le modèle est-il chargé et prêt ?
     pub async fn is_running(&self) -> bool {
         self.process.lock().await.is_some()
+    }
+
+    /// Prêt à répondre tout de suite, sans attendre ? Faux pendant un
+    /// chargement — qui garde le verrou jusqu'à cinq minutes sans GPU libre —
+    /// comme pendant une autre question : l'appelant se passe alors de Laya
+    /// plutôt que de rester bloqué derrière lui.
+    pub fn is_ready_now(&self) -> bool {
+        self.process
+            .try_lock()
+            .map(|g| g.is_some())
+            .unwrap_or(false)
     }
 
     /// Choisir le meilleur candidat pour `instruction`.
@@ -195,7 +216,7 @@ impl Laya {
                 dernier = Some(c);
             }
             if manche.len() <= GROUPE_MAX {
-                return dernier.ok_or_else(|| "aucune réponse de Laya".to_string());
+                return dernier.ok_or_else(|| "aucune réponse du modèle de décision".to_string());
             }
             if gagnants.len() >= manche.len() {
                 return Err("le tournoi ne converge pas".into());
@@ -218,7 +239,7 @@ impl Laya {
         let answers = self.predict(state, q).await?;
         let a = answers
             .get("pick")
-            .ok_or_else(|| "réponse de Laya sans champ « pick »".to_string())?;
+            .ok_or_else(|| "réponse du modèle de décision sans champ « pick »".to_string())?;
         parse_choice(a)
     }
 
@@ -231,7 +252,7 @@ impl Laya {
             .and_then(|a| a.get("noul"))
             .and_then(Value::as_f64)
             .map(|p| p as f32)
-            .ok_or_else(|| "réponse de Laya sans probabilité".to_string())
+            .ok_or_else(|| "réponse du modèle de décision sans probabilité".to_string())
     }
 
     async fn predict(&self, state: &Value, questions: Value) -> Result<Value, String> {
@@ -243,16 +264,28 @@ impl Laya {
         }
         res?.get("answers")
             .cloned()
-            .ok_or_else(|| "réponse de Laya sans réponses".to_string())
+            .ok_or_else(|| "réponse du modèle de décision sans réponses".to_string())
     }
 
     async fn request(&self, mut req: Value) -> Result<Value, String> {
         let mut garde = self.process.lock().await;
         if garde.is_none() {
-            *garde = Some(self.spawn().await?);
+            if let Some((quand, raison)) = self.echec_demarrage.lock().await.as_ref() {
+                if quand.elapsed() < REPOS_APRES_ECHEC {
+                    return Err(raison.clone());
+                }
+            }
+            match self.spawn().await {
+                Ok(p) => *garde = Some(p),
+                Err(e) => {
+                    *self.echec_demarrage.lock().await =
+                        Some((std::time::Instant::now(), e.clone()));
+                    return Err(e);
+                }
+            }
         }
         let Some(p) = garde.as_mut() else {
-            return Err("processus Laya absent".into());
+            return Err("modèle de décision absent".into());
         };
         p.next_id += 1;
         req["id"] = json!(p.next_id);
@@ -263,7 +296,7 @@ impl Laya {
             Ok(v) => Err(v
                 .get("error")
                 .and_then(Value::as_str)
-                .unwrap_or("Laya a refusé la demande")
+                .unwrap_or("le modèle de décision a refusé la demande")
                 .to_string()),
             Err(e) => {
                 // Un processus dans un état douteux ne sert plus : le suivant repart propre.
@@ -279,7 +312,8 @@ impl Laya {
 
     async fn spawn(&self) -> Result<Process, String> {
         let python = find_python().ok_or_else(|| {
-            "Python introuvable : Laya (pip install laya) demande Python 3.10 ou plus".to_string()
+            "Python introuvable : le modèle de décision local demande Python 3.10 ou plus"
+                .to_string()
         })?;
         let script = write_script()?;
         let mut child = Command::new(&python)
@@ -292,31 +326,37 @@ impl Laya {
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("impossible de lancer Python : {e}"))?;
-        let stdin = child.stdin.take().ok_or("stdin de Laya indisponible")?;
-        let stdout = child.stdout.take().ok_or("stdout de Laya indisponible")?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or("stdin du modèle de décision indisponible")?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or("stdout du modèle de décision indisponible")?;
         let mut lignes = BufReader::new(stdout).lines();
         let accueil = timeout(DELAI_CHARGEMENT, lignes.next_line())
             .await
             .map_err(|_| {
-                "Laya met trop de temps à se charger (premier lancement : téléchargement du modèle ?)"
+                "Le modèle de décision met trop de temps à se charger (premier lancement : téléchargement du modèle ?)"
                     .to_string()
             })?
-            .map_err(|e| format!("lecture de Laya impossible : {e}"))?;
+            .map_err(|e| format!("lecture du modèle de décision impossible : {e}"))?;
         let Some(accueil) = accueil else {
             return Err(format!(
-                "Laya s'est arrêté au démarrage : {}",
+                "Le modèle de décision s'est arrêté au démarrage : {}",
                 stderr_tail(&mut child).await
             ));
         };
         let v: Value = serde_json::from_str(&accueil)
-            .map_err(|e| format!("accueil de Laya illisible : {e}"))?;
+            .map_err(|e| format!("accueil du modèle de décision illisible : {e}"))?;
         if v.get("ready") != Some(&Value::Bool(true)) {
             let raison = v
                 .get("error")
                 .and_then(Value::as_str)
                 .unwrap_or("raison inconnue");
             return Err(format!(
-                "Laya indisponible ({raison}). Installez-le avec : {python} -m pip install laya"
+                "Modèle de décision local indisponible ({raison}). Installation : {python} -m pip install laya"
             ));
         }
         Ok(Process {
@@ -332,14 +372,14 @@ async fn echange(p: &mut Process, ligne: &str) -> Result<Value, String> {
     p.stdin
         .write_all(ligne.as_bytes())
         .await
-        .map_err(|e| format!("écriture vers Laya impossible : {e}"))?;
+        .map_err(|e| format!("écriture vers le modèle de décision impossible : {e}"))?;
     p.stdin
         .flush()
         .await
-        .map_err(|e| format!("écriture vers Laya impossible : {e}"))?;
+        .map_err(|e| format!("écriture vers le modèle de décision impossible : {e}"))?;
     match timeout(DELAI_REPONSE, p.stdout.next_line()).await {
-        Err(_) => Err("Laya n'a pas répondu à temps".into()),
-        Ok(Err(e)) => Err(format!("lecture de Laya impossible : {e}")),
+        Err(_) => Err("Le modèle de décision n'a pas répondu à temps".into()),
+        Ok(Err(e)) => Err(format!("lecture du modèle de décision impossible : {e}")),
         Ok(Ok(None)) => Err("Laya s'est arrêté".into()),
         Ok(Ok(Some(l))) => {
             serde_json::from_str(&l).map_err(|e| format!("réponse de Laya illisible : {e}"))

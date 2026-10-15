@@ -2,8 +2,8 @@
   "$schema": "https://locaryn.dev/schema/morph.json/v0.1",
   "apiVersion": "0.1",
   "name": "morph-browser",
-  "version": "0.1.0-beta.4",
-  "description": "Pilote tout le navigateur, pas un seul onglet : retrouve les onglets déjà ouverts, lit, clique, saisit, navigue. Un cadre animé et une pastille signalent chaque onglet contrôlé, avec un bouton Stop. Les décisions rapides (quel élément, quel onglet, action risquée ?) passent par Laya.",
+  "version": "0.1.0-beta.5",
+  "description": "Pilote tout le navigateur, pas un seul onglet : retrouve les onglets déjà ouverts, lit, clique, saisit, navigue. Un cadre animé et une pastille signalent chaque onglet contrôlé, avec un bouton Stop. Les décisions rapides (quel élément, quel onglet, action risquée ?) passent par un petit modèle local installé par Locaryn.",
   "author": "Locaryn Team",
   "license": "Apache-2.0",
   "homepage": "https://github.com/Locaryn/morph-browser",
@@ -28,7 +28,7 @@
       "reason": "Écrire le code d'appairage et les captures d'écran demandées."
     },
     "network": {
-      "reason": "Écouter en local (127.0.0.1) l'extension du navigateur, et télécharger le modèle Laya au premier usage."
+      "reason": "Écouter en local (127.0.0.1) l'extension du navigateur, et utiliser le modèle de décision local installé par Locaryn."
     }
   },
   "components": {
@@ -48,6 +48,14 @@
   "beta": true,
   "stability": "untested",
   "versions": [
+    {
+      "version": "0.1.0-beta.5",
+      "is_beta": true,
+      "summary": "Utilise le modèle de décision qu'installe l'application ; le modèle de conversation ne le nomme plus ; un modèle de décision absent n'est plus relancé à chaque action",
+      "tag": "v0.1.0-beta.5",
+      "released_at": "2026-10-15",
+      "install_source": "Locaryn/morph-browser#v0.1.0-beta.5"
+    },
     {
       "version": "0.1.0-beta.4",
       "is_beta": true,
