@@ -34,7 +34,9 @@ function setBadge(text) {
 
 function connect() {
   clearTimeout(state.reconnectTimer);
-  if (!state.token) return setBadge("?");
+  // Sans code, on se présente quand même : quand la personne clique « Relier »
+  // dans Locaryn, le pont envoie le code et l'extension le garde.
+  if (!state.token) setBadge("?");
   if (state.ws && state.ws.readyState <= WebSocket.OPEN) return;
   let ws;
   try {
@@ -74,14 +76,26 @@ async function onServerMessage(ws, raw) {
     console.warn("Locaryn : message illisible", e);
     return;
   }
+  if (msg.type === "paired" && typeof msg.token === "string" && msg.token) {
+    // Relié depuis Locaryn : le code sert aux connexions suivantes.
+    state.token = msg.token;
+    await api.storage.local.set({ token: msg.token });
+    state.connected = true;
+    setBadge("●");
+    return;
+  }
   if (msg.type === "welcome") {
     state.connected = true;
     setBadge("●");
     return;
   }
   if (msg.type === "refused") {
-    console.warn("Locaryn : appairage refusé —", msg.reason);
-    setBadge("!");
+    // Sans code, attendre que la personne relie l'extension n'est pas une
+    // erreur : on réessaie en silence.
+    if (state.token) {
+      console.warn("Locaryn : appairage refusé —", msg.reason);
+      setBadge("!");
+    }
     return;
   }
   if (msg.id === undefined || !msg.method) return;

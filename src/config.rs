@@ -13,6 +13,10 @@ pub struct BrowserConfig {
     /// Faire juger le risque par Laya en plus du repli lexical.
     #[serde(default = "vrai")]
     pub laya_risk_check: bool,
+    /// Le navigateur à relier (chrome, edge, opera, brave, vivaldi) : celui
+    /// dont `browser_link` ouvre la page des extensions.
+    #[serde(default)]
+    pub browser: String,
 }
 
 fn port_defaut() -> u16 {
@@ -29,6 +33,7 @@ impl Default for BrowserConfig {
             port: port_defaut(),
             confirm_risky: true,
             laya_risk_check: true,
+            browser: String::new(),
         }
     }
 }

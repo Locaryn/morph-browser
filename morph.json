@@ -2,7 +2,7 @@
   "$schema": "https://locaryn.dev/schema/morph.json/v0.1",
   "apiVersion": "0.1",
   "name": "morph-browser",
-  "version": "0.1.0-beta.7",
+  "version": "0.1.0-beta.8",
   "description": "Pilote tout le navigateur, pas un seul onglet : retrouve les onglets déjà ouverts, lit, clique, saisit, navigue. Un cadre animé et une pastille signalent chaque onglet contrôlé, avec un bouton Stop. Les décisions rapides (quel élément, quel onglet, action risquée ?) passent par un petit modèle local installé par Locaryn.",
   "author": "Locaryn Team",
   "license": "Apache-2.0",
@@ -31,6 +31,38 @@
       "reason": "Écouter en local (127.0.0.1) l'extension du navigateur, et utiliser le modèle de décision local installé par Locaryn."
     }
   },
+  "ui_contributions": {
+    "settings_sections": [
+      {
+        "id": "liaison",
+        "title": "Navigateur",
+        "description": "Relier votre navigateur à Locaryn.",
+        "fields": [
+          {
+            "key": "browser",
+            "label": "Votre navigateur",
+            "kind": "choice",
+            "options": [
+              "chrome",
+              "edge",
+              "opera",
+              "brave",
+              "vivaldi"
+            ],
+            "default": "chrome",
+            "hint": "Enregistrez avant de relier : sa page des extensions s'ouvrira."
+          },
+          {
+            "key": "link",
+            "label": "Relier au navigateur",
+            "kind": "action",
+            "tool": "browser_link",
+            "hint": "Ouvre la page des extensions et le dossier de l'extension. Chargez-la en mode développeur : elle se relie seule dans les deux minutes, sans code à recopier."
+          }
+        ]
+      }
+    ]
+  },
   "components": {
     "skills": [
       "SKILL.md"
@@ -49,6 +81,14 @@
   "beta": true,
   "stability": "untested",
   "versions": [
+    {
+      "version": "0.1.0-beta.8",
+      "is_beta": true,
+      "summary": "Relier le navigateur en un clic : la page des extensions et le dossier s'ouvrent, l'extension se relie seule sans code à recopier ; le code d'appairage ne passe plus par le modèle",
+      "tag": "v0.1.0-beta.8",
+      "released_at": "2026-11-01",
+      "install_source": "Locaryn/morph-browser#v0.1.0-beta.8"
+    },
     {
       "version": "0.1.0-beta.7",
       "is_beta": true,

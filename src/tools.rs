@@ -7,6 +7,7 @@
 
 use crate::bridge::{load_or_create_token, Bridge};
 use crate::config::BrowserConfig;
+use crate::liaison::{dossier_extension, ouvrir_dossier, Navigateur, DUREE_APPAIRAGE};
 use base64::Engine;
 use locaryn_morph_kit::laya::{read_config, Candidate, Laya};
 use locaryn_morph_kit::mcp::{str_prop, tool};
@@ -58,6 +59,7 @@ impl Browser {
         self.warm_up(name);
         match name {
             "browser_status" => self.status().await,
+            "browser_link" => self.link(&args).await,
             "browser_find_tab" => self.find_tab(&args).await,
             "browser_snapshot" => self.snapshot(args).await,
             "browser_find_element" => self.find_element(&args).await,
@@ -77,7 +79,10 @@ impl Browser {
     /// dure des dizaines de secondes, autant qu'il se fasse pendant que le
     /// modèle de conversation réfléchit.
     fn warm_up(&self, tool: &str) {
-        if tool == "browser_status" || self.warmed.swap(true, Ordering::Relaxed) {
+        if tool == "browser_status"
+            || tool == "browser_link"
+            || self.warmed.swap(true, Ordering::Relaxed)
+        {
             return;
         }
         let laya = self.laya.clone();
@@ -108,14 +113,56 @@ impl Browser {
             out["bridge_error"] = json!(e);
         }
         if !connected {
-            out["pairing_code"] = json!(self.bridge.token());
+            // Le code d'appairage ne passe plus par le modèle : browser_link
+            // relie l'extension sans que personne ne le recopie.
             out["setup"] = json!(
-                "1) Dans le navigateur, ouvrez chrome://extensions, activez le mode développeur, \
-                 « Charger l'extension non empaquetée » et choisissez le dossier `extension` du morph. \
-                 2) Cliquez l'icône Locaryn, collez le code d'appairage, Enregistrer."
+                "Extension non reliée : appelez browser_link (avec le navigateur de la personne), \
+                 puis donnez-lui les étapes qu'il rend."
             );
         }
         Ok(out)
+    }
+
+    /// Relier le navigateur : ouvre la fenêtre d'appairage, le dossier de
+    /// l'extension et la page des extensions du navigateur choisi.
+    async fn link(&self, args: &Value) -> Result<Value, String> {
+        // Relu à chaque appel : le choix vient d'être enregistré dans les
+        // réglages, alors que le serveur a lu les siens au démarrage.
+        let depuis_reglages = read_config::<BrowserConfig>().browser;
+        let choisi = args
+            .get("browser")
+            .and_then(Value::as_str)
+            .filter(|b| !b.trim().is_empty())
+            .unwrap_or(depuis_reglages.as_str())
+            .trim()
+            .to_ascii_lowercase();
+        if self.bridge.is_connected().await {
+            return Ok(json!({
+                "extension_connected": true,
+                "message": "L'extension est déjà reliée : rien à faire."
+            }));
+        }
+        self.bridge.ouvrir_appairage(DUREE_APPAIRAGE).await;
+        let dossier = dossier_extension();
+        let dossier_ouvert = dossier.as_ref().is_some_and(|d| ouvrir_dossier(d));
+        let navigateur = Navigateur::depuis(&choisi);
+        let page_ouverte = navigateur.is_some_and(|n| n.ouvrir_page_extensions());
+        let page = navigateur.map_or("chrome://extensions", |n| n.page);
+        Ok(json!({
+            "pairing_window_seconds": DUREE_APPAIRAGE.as_secs(),
+            "extension_folder": dossier.as_ref().map(|d| d.display().to_string()),
+            "folder_opened": dossier_ouvert,
+            "extensions_page": page,
+            "extensions_page_opened": page_ouverte,
+            "message": format!(
+                "1) Dans le navigateur, ouvrez {page} (déjà ouvert si possible) et activez le mode développeur. \
+                 2) « Charger l'extension non empaquetée » et choisissez le dossier {} (déjà ouvert dans l'explorateur). \
+                 3) C'est tout : dans les {} secondes, l'extension se relie seule à Locaryn, sans code. \
+                 Après ce délai, rappelez browser_link.",
+                dossier.as_ref().map_or("`extension` du morph".into(), |d| format!("« {} »", d.display())),
+                DUREE_APPAIRAGE.as_secs()
+            ),
+        }))
     }
 
     // ── Onglets ─────────────────────────────────────────────────────────────
@@ -434,7 +481,8 @@ fn ref_props() -> Value {
 
 fn tab_tools() -> Vec<Value> {
     vec![
-        tool("browser_status", "État du pont avec le navigateur : extension connectée, onglets arrêtés par l'utilisateur. Si l'extension n'est pas connectée, donne le code d'appairage et les étapes d'installation.", json!({}), &[]),
+        tool("browser_status", "État du pont avec le navigateur : extension connectée, onglets arrêtés par l'utilisateur.", json!({}), &[]),
+        tool("browser_link", "Relie le navigateur de la personne à Locaryn : ouvre la page des extensions du navigateur et le dossier de l'extension, puis l'extension se relie seule pendant deux minutes, sans code. À appeler quand browser_status dit que l'extension n'est pas reliée.", json!({ "browser": { "type": "string", "enum": ["chrome", "edge", "opera", "brave", "vivaldi"], "description": "Le navigateur de la personne ; omis : celui des réglages du morph." } }), &[]),
         tool("browser_list_tabs", "Liste tous les onglets ouverts, dans toutes les fenêtres (titre, adresse, actif, épinglé, son en cours). `query` filtre par titre ou adresse.", json!({ "query": str_prop("Filtre sur le titre ou l'adresse"), "window_id": { "type": "integer" } }), &[]),
         tool("browser_find_tab", "Retrouve, parmi les onglets déjà ouverts, celui qui correspond à une description (« le devis chez Leroy Merlin », « ma boîte mail »).", json!({ "description": str_prop("Ce que l'onglet contient ou montre") }), &["description"]),
         tool("browser_focus_tab", "Met un onglet au premier plan (et sa fenêtre).", json!({ "tab_id": tab_prop() }), &["tab_id"]),
@@ -485,6 +533,7 @@ mod tests {
         let tools = tools_list();
         let speciaux = [
             "browser_status",
+            "browser_link",
             "browser_find_tab",
             "browser_snapshot",
             "browser_find_element",

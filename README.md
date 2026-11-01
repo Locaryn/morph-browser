@@ -29,7 +29,7 @@ Télécharge la dernière release, vérifie son empreinte SHA-256, l'installe sa
 2. Dans le navigateur :
    - **Chrome, Edge, Brave, Arc, Vivaldi, Opera** : `chrome://extensions` (ou `edge://extensions`…) → mode développeur → **Charger l'extension non empaquetée** → dossier `extension/` du morph.
    - **Firefox** : `about:debugging#/runtime/this-firefox` → **Charger un module complémentaire temporaire** → fichier `extension-firefox/manifest.json`. Puis, dans `about:addons` → l'extension → Autorisations, accordez l'accès à **tous les sites** : Firefox ne l'accorde pas à l'installation, et sans lui l'extension ne peut lire aucune page. Un module temporaire disparaît à la fermeture de Firefox ; un module permanent exige une extension signée (publication sur addons.mozilla.org, pas encore faite).
-3. Lire le code d'appairage dans le fichier `pairing-token` du dossier de données (`%APPDATA%\locaryn\morph-browser\` sous Windows) — `browser_status` le rend aussi, mais sa réponse passe par le modèle. Le coller dans l'icône de l'extension, **Enregistrer**.
+3. Relier : dans Locaryn, Réglages de l'extension → **Relier au navigateur** (ou demandez « relie mon navigateur » dans le chat). La page des extensions et le dossier `extension/` s'ouvrent ; une fois l'extension chargée, elle se relie seule dans les deux minutes, sans code à recopier. Le code d'appairage reste dans `pairing-token` (`%APPDATA%\locaryn\morph-browser\` sous Windows) pour un appairage à la main depuis l'icône de l'extension.
 
 Le pont refuse toute origine qui n'est pas une extension de navigateur et tout client sans le code d'appairage.
 

@@ -33,7 +33,14 @@ pub struct Bridge {
     hello: Mutex<Option<Value>>,
     blocked: Mutex<Vec<u64>>,
     bind_error: Mutex<Option<String>>,
+    /// Fin de la fenêtre d'appairage ouverte par `browser_link` : jusque-là,
+    /// une extension sans code reçoit le code au lieu d'être refusée.
+    appairage: Mutex<Option<std::time::Instant>>,
 }
+
+/// Le refus envoyé à une extension qui n'a pas encore de code : elle
+/// réessaie en silence, le journal n'a pas à s'en remplir.
+const SANS_CODE: &str = "en attente d'appairage";
 
 impl Bridge {
     /// Démarre l'écoute. Un port pris n'empêche pas le serveur MCP de vivre :
@@ -49,6 +56,7 @@ impl Bridge {
             hello: Mutex::new(None),
             blocked: Mutex::new(Vec::new()),
             bind_error: Mutex::new(None),
+            appairage: Mutex::new(None),
         });
         match TcpListener::bind(("127.0.0.1", port)).await {
             Ok(listener) => {
@@ -64,8 +72,24 @@ impl Bridge {
         bridge
     }
 
-    pub fn token(&self) -> &str {
-        &self.token
+    /// Ouvre la fenêtre d'appairage : la première extension qui se présente
+    /// sans code dans ce délai le reçoit. Le code ne passe jamais par le
+    /// modèle de conversation ni par l'écran.
+    pub async fn ouvrir_appairage(&self, duree: Duration) {
+        *self.appairage.lock().await = Some(std::time::Instant::now() + duree);
+    }
+
+    /// Prend la fenêtre si elle est encore ouverte : un seul appairage par
+    /// ouverture.
+    async fn prendre_appairage(&self) -> bool {
+        let mut fenetre = self.appairage.lock().await;
+        match *fenetre {
+            Some(fin) if std::time::Instant::now() < fin => {
+                *fenetre = None;
+                true
+            }
+            _ => false,
+        }
     }
 
     pub async fn bind_error(&self) -> Option<String> {
@@ -125,8 +149,9 @@ impl Bridge {
                 Ok((stream, _)) => {
                     let b = self.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = b.handle(stream).await {
-                            eprintln!("pont navigateur : {e}");
+                        match b.handle(stream).await {
+                            Err(e) if e != SANS_CODE => eprintln!("pont navigateur : {e}"),
+                            _ => {}
                         }
                     });
                 }
@@ -162,14 +187,30 @@ impl Bridge {
             .map_err(|e| format!("lecture : {e}"))?;
         let hello: Value = serde_json::from_str(premier.to_text().unwrap_or(""))
             .map_err(|e| format!("appairage illisible : {e}"))?;
-        let jeton_ok = hello.get("type") == Some(&json!("hello"))
-            && hello.get("token").and_then(Value::as_str) == Some(self.token.as_str());
+        let est_hello = hello.get("type") == Some(&json!("hello"));
+        let jeton = hello.get("token").and_then(Value::as_str).unwrap_or("");
+        let jeton_ok = est_hello && jeton == self.token.as_str();
         if !jeton_ok {
-            let refus = json!({"type":"refused","reason":"code d'appairage invalide"}).to_string();
-            if let Err(e) = sink.send(Message::text(refus)).await {
-                eprintln!("pont navigateur : refus non transmis : {e}");
+            if est_hello && self.prendre_appairage().await {
+                // Relié depuis Locaryn : l'extension garde ce code et
+                // l'utilisera seule ensuite.
+                sink.send(Message::text(
+                    json!({"type":"paired","token": self.token}).to_string(),
+                ))
+                .await
+                .map_err(|e| format!("appairage : {e}"))?;
+            } else {
+                let raison = if jeton.is_empty() {
+                    SANS_CODE
+                } else {
+                    "code d'appairage invalide"
+                };
+                let refus = json!({"type":"refused","reason": raison}).to_string();
+                if let Err(e) = sink.send(Message::text(refus)).await {
+                    eprintln!("pont navigateur : refus non transmis : {e}");
+                }
+                return Err(raison.into());
             }
-            return Err("code d'appairage invalide".into());
         }
         sink.send(Message::text(json!({"type":"welcome"}).to_string()))
             .await
@@ -309,5 +350,45 @@ mod tests {
         let b = Bridge::start(0, "t".repeat(40)).await;
         let e = b.call("tabs_list", json!({})).await.unwrap_err();
         assert!(e.contains("browser_status"), "{e}");
+    }
+
+    /// Une extension sans code est refusée tant que personne n'a cliqué
+    /// « Relier », puis reçoit le code une seule fois.
+    #[tokio::test]
+    async fn la_fenetre_d_appairage_donne_le_code_une_fois() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let code = "c".repeat(40);
+        let b = Bridge::start(port, code.clone()).await;
+        let essai = || async move {
+            let mut req = format!("ws://127.0.0.1:{port}")
+                .into_client_request()
+                .unwrap();
+            req.headers_mut()
+                .insert("origin", "chrome-extension://essai".parse().unwrap());
+            let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+            ws.send(Message::text(
+                json!({"type":"hello","token":""}).to_string(),
+            ))
+            .await
+            .unwrap();
+            let rep = ws.next().await.unwrap().unwrap();
+            serde_json::from_str::<Value>(rep.to_text().unwrap()).unwrap()
+        };
+        let refus = essai().await;
+        assert_eq!(refus["type"], "refused");
+        assert_eq!(refus["reason"], SANS_CODE);
+
+        b.ouvrir_appairage(Duration::from_secs(30)).await;
+        let relie = essai().await;
+        assert_eq!(relie["type"], "paired");
+        assert_eq!(relie["token"], code.as_str());
+
+        // Une seule extension par ouverture.
+        assert_eq!(essai().await["type"], "refused");
     }
 }
