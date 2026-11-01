@@ -145,7 +145,7 @@ impl Laya {
         match self.choose(state, instruction, candidates).await {
             Ok(c) => Ranked {
                 ranking: c.ranking,
-                engine: json!({ "name": "laya", "ms": debut.elapsed().as_millis() as u64 }),
+                engine: json!({ "name": "decision-model", "ms": debut.elapsed().as_millis() as u64 }),
                 warning: None,
             },
             Err(e) => {
@@ -267,7 +267,16 @@ impl Laya {
             .ok_or_else(|| "réponse du modèle de décision sans réponses".to_string())
     }
 
-    async fn request(&self, mut req: Value) -> Result<Value, String> {
+    /// Toute erreur sort d'ici, vers `last_error` et les résultats d'outils :
+    /// le modèle de conversation la lit, il n'a pas à connaître le nom du
+    /// modèle de décision interne (une erreur de Python peut le citer).
+    async fn request(&self, req: Value) -> Result<Value, String> {
+        self.request_brut(req)
+            .await
+            .map_err(|e| masquer_nom_interne(&e))
+    }
+
+    async fn request_brut(&self, mut req: Value) -> Result<Value, String> {
         let mut garde = self.process.lock().await;
         if garde.is_none() {
             if let Some((quand, raison)) = self.echec_demarrage.lock().await.as_ref() {
@@ -356,7 +365,7 @@ impl Laya {
                 .and_then(Value::as_str)
                 .unwrap_or("raison inconnue");
             return Err(format!(
-                "Modèle de décision local indisponible ({raison}). Installation : {python} -m pip install laya"
+                "Modèle de décision local indisponible ({raison}). Il s'installe depuis Locaryn : Réglages → Performance → Décisions rapides des morphs ({python})."
             ));
         }
         Ok(Process {
@@ -366,6 +375,21 @@ impl Laya {
             next_id: 0,
         })
     }
+}
+
+/// Remplace le nom du modèle de décision, quelle que soit sa casse.
+fn masquer_nom_interne(texte: &str) -> String {
+    const NOM: &str = "laya";
+    let bas = texte.to_ascii_lowercase();
+    let mut sortie = String::with_capacity(texte.len());
+    let mut reste = 0;
+    for (debut, _) in bas.match_indices(NOM) {
+        sortie.push_str(&texte[reste..debut]);
+        sortie.push_str("decision-model");
+        reste = debut + NOM.len();
+    }
+    sortie.push_str(&texte[reste..]);
+    sortie
 }
 
 async fn echange(p: &mut Process, ligne: &str) -> Result<Value, String> {
@@ -380,10 +404,9 @@ async fn echange(p: &mut Process, ligne: &str) -> Result<Value, String> {
     match timeout(DELAI_REPONSE, p.stdout.next_line()).await {
         Err(_) => Err("Le modèle de décision n'a pas répondu à temps".into()),
         Ok(Err(e)) => Err(format!("lecture du modèle de décision impossible : {e}")),
-        Ok(Ok(None)) => Err("Laya s'est arrêté".into()),
-        Ok(Ok(Some(l))) => {
-            serde_json::from_str(&l).map_err(|e| format!("réponse de Laya illisible : {e}"))
-        }
+        Ok(Ok(None)) => Err("Le modèle de décision s'est arrêté".into()),
+        Ok(Ok(Some(l))) => serde_json::from_str(&l)
+            .map_err(|e| format!("réponse du modèle de décision illisible : {e}")),
     }
 }
 
@@ -446,7 +469,8 @@ fn write_script() -> Result<PathBuf, String> {
         .join("locaryn-laya");
     std::fs::create_dir_all(&dossier).map_err(|e| format!("dossier temporaire : {e}"))?;
     let chemin = dossier.join("laya_server.py");
-    std::fs::write(&chemin, SCRIPT).map_err(|e| format!("écriture du serveur Laya : {e}"))?;
+    std::fs::write(&chemin, SCRIPT)
+        .map_err(|e| format!("écriture du serveur du modèle de décision : {e}"))?;
     Ok(chemin)
 }
 
@@ -538,6 +562,15 @@ mod tests {
     #[test]
     fn un_choix_sans_etiquette_est_refuse() {
         assert!(parse_choice(&json!({"confidence":1.0})).is_err());
+    }
+
+    #[test]
+    fn le_nom_interne_ne_sort_pas() {
+        assert_eq!(
+            masquer_nom_interne("No module named 'laya' (Laya, LAYA)"),
+            "No module named 'decision-model' (decision-model, decision-model)"
+        );
+        assert_eq!(masquer_nom_interne("délai dépassé"), "délai dépassé");
     }
 
     #[tokio::test]
