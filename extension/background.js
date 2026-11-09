@@ -27,16 +27,24 @@ async function loadConfig() {
   state.groupTabs = Boolean(c.groupTabs);
 }
 
-function setBadge(text) {
+const VERT = "#3e8c66";
+const ROUGE = "#c2453d";
+
+function setBadge(text, color = VERT) {
   api.action.setBadgeText({ text });
-  api.action.setBadgeBackgroundColor({ color: "#3e8c66" });
+  api.action.setBadgeBackgroundColor({ color });
+}
+
+/** Point rouge : l'extension n'est pas reliée à Locaryn. */
+function badgeDeconnecte() {
+  setBadge("●", ROUGE);
 }
 
 function connect() {
   clearTimeout(state.reconnectTimer);
   // Sans code, on se présente quand même : quand la personne clique « Relier »
   // dans Locaryn, le pont envoie le code et l'extension le garde.
-  if (!state.token) setBadge("?");
+  if (!state.connected) badgeDeconnecte();
   if (state.ws && state.ws.readyState <= WebSocket.OPEN) return;
   let ws;
   try {
@@ -57,7 +65,7 @@ function connect() {
   ws.onmessage = (ev) => onServerMessage(ws, ev.data);
   ws.onclose = () => {
     state.connected = false;
-    setBadge("");
+    badgeDeconnecte();
     scheduleReconnect();
   };
   ws.onerror = () => ws.close();
@@ -94,7 +102,7 @@ async function onServerMessage(ws, raw) {
     // erreur : on réessaie en silence.
     if (state.token) {
       console.warn("Locaryn : appairage refusé —", msg.reason);
-      setBadge("!");
+      setBadge("!", ROUGE);
     }
     return;
   }
@@ -290,6 +298,59 @@ async function evaluate(p) {
 
 // ── Méthodes exposées au serveur ────────────────────────────────────────────
 
+// ── Groupes d'onglets (Chromium) ────────────────────────────────────────────
+
+function groupesDisponibles() {
+  if (!api.tabGroups || !api.tabs.group) {
+    throw new Error("Ce navigateur n'a pas de groupes d'onglets (Firefox).");
+  }
+}
+
+function idsOnglets(p) {
+  const ids = (Array.isArray(p.tab_ids) ? p.tab_ids : []).map(Number).filter(Number.isInteger);
+  if (ids.length === 0) throw new Error("Donnez au moins un onglet dans `tab_ids`.");
+  return ids;
+}
+
+async function decrireGroupe(g) {
+  const onglets = await api.tabs.query({ groupId: g.id });
+  return {
+    group_id: g.id,
+    window_id: g.windowId,
+    title: g.title || "",
+    color: g.color,
+    collapsed: g.collapsed,
+    tab_ids: onglets.map((t) => t.id),
+  };
+}
+
+async function tabs_group(p) {
+  groupesDisponibles();
+  const tabIds = idsOnglets(p);
+  const options = { tabIds };
+  if (p.group_id !== undefined && p.group_id !== null) options.groupId = Number(p.group_id);
+  const gid = await api.tabs.group(options);
+  const maj = {};
+  if (typeof p.title === "string") maj.title = p.title;
+  if (typeof p.color === "string") maj.color = p.color;
+  if (typeof p.collapsed === "boolean") maj.collapsed = p.collapsed;
+  const g = Object.keys(maj).length ? await api.tabGroups.update(gid, maj) : await api.tabGroups.get(gid);
+  return { group: await decrireGroupe(g) };
+}
+
+async function tabs_ungroup(p) {
+  groupesDisponibles();
+  const tabIds = idsOnglets(p);
+  await api.tabs.ungroup(tabIds);
+  return { ungrouped: tabIds };
+}
+
+async function groups_list() {
+  groupesDisponibles();
+  const groupes = await api.tabGroups.query({});
+  return { groups: await Promise.all(groupes.map(decrireGroupe)) };
+}
+
 const METHODS = {
   async tabs_list(p) {
     const tabs = await api.tabs.query(p.window_id ? { windowId: Number(p.window_id) } : {});
@@ -353,6 +414,9 @@ const METHODS = {
   },
   screenshot,
   evaluate,
+  tabs_group,
+  tabs_ungroup,
+  groups_list,
   snapshot: (p) => pageCommand(p, "snapshot", "Lecture de la page"),
   click: (p) => pageCommand(p, "click", p.button === "right" ? "Clic droit" : "Clic"),
   type: (p) => pageCommand(p, "type", "Saisie"),

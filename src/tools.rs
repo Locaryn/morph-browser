@@ -446,6 +446,9 @@ fn passthrough(tool: &str) -> Option<&'static str> {
         "browser_evaluate" => "evaluate",
         "browser_history_search" => "history_search",
         "browser_release" => "release",
+        "browser_group_tabs" => "tabs_group",
+        "browser_ungroup_tabs" => "tabs_ungroup",
+        "browser_list_groups" => "groups_list",
         _ => return None,
     })
 }
@@ -525,6 +528,9 @@ fn tab_tools() -> Vec<Value> {
         tool("browser_close_tab", "Ferme un onglet.", json!({ "tab_id": tab_prop() }), &["tab_id"]),
         tool("browser_navigate", "Charge une adresse dans un onglet, ou revient en arrière, avance, recharge.", json!({ "tab_id": tab_prop(), "url": str_prop("Adresse à charger"), "action": { "type": "string", "enum": ["back", "forward", "reload"] } }), &[]),
         tool("browser_history_search", "Cherche dans l'historique du navigateur (pages visitées, même onglet fermé).", json!({ "query": str_prop("Mots recherchés"), "max": { "type": "integer" } }), &["query"]),
+        tool("browser_group_tabs", "Range des onglets dans un groupe nommé et coloré (Chromium ; Firefox n'a pas de groupes). Sans `group_id`, crée un groupe ; avec, ajoute les onglets à ce groupe et peut le renommer, le recolorer ou le replier.", json!({ "tab_ids": { "type": "array", "items": { "type": "integer" }, "description": "Les onglets à grouper" }, "group_id": { "type": "integer", "description": "Groupe existant (voir browser_list_groups)" }, "title": str_prop("Nom du groupe"), "color": { "type": "string", "enum": ["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"] }, "collapsed": { "type": "boolean", "description": "Replier le groupe" } }), &["tab_ids"]),
+        tool("browser_ungroup_tabs", "Sort des onglets de leur groupe.", json!({ "tab_ids": { "type": "array", "items": { "type": "integer" } } }), &["tab_ids"]),
+        tool("browser_list_groups", "Liste les groupes d'onglets : nom, couleur, replié, onglets qu'ils contiennent.", json!({}), &[]),
         tool("browser_release", "Termine le contrôle d'un onglet : le cadre et la pastille disparaissent. À appeler quand la tâche est finie.", json!({ "tab_id": tab_prop() }), &[]),
     ]
 }
