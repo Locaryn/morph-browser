@@ -89,6 +89,18 @@ const CONNUS: &[(&str, Navigateur)] = &[
         },
     ),
     (
+        "comet",
+        Navigateur {
+            nom: "comet",
+            dossier: "extension",
+            // Comet (Perplexity) est un Chromium : il sert l'adresse de Chrome.
+            page: "chrome://extensions",
+            exe: "comet",
+            app_mac: "Comet",
+            chemins_windows: &["Perplexity\\Comet\\Application\\comet.exe"],
+        },
+    ),
+    (
         "firefox",
         Navigateur {
             nom: "firefox",
@@ -315,6 +327,7 @@ mod tests {
             ("OperaStable", "opera"),
             ("VivaldiHTM.ZIUNDNSV2NNAAP6BYLXRAS2J2E", "vivaldi"),
             ("FirefoxURL-308046B0AF4A39CB", "firefox"),
+            ("CometHTM.WBIOHI4CNSRN6N4ARSPBJJYHDA", "comet"),
             ("brave-browser.desktop", "brave"),
             ("google-chrome.desktop", "chrome"),
         ] {

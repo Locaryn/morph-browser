@@ -69,6 +69,7 @@ fn nom_affiche(nom: &str) -> &str {
         "opera" => "Opera",
         "brave" => "Brave",
         "vivaldi" => "Vivaldi",
+        "comet" => "Comet",
         "firefox" => "Firefox",
         autre => autre,
     }

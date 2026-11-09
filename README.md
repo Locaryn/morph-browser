@@ -2,7 +2,7 @@
 
 Contrôle **tout** le navigateur — pas seulement l'onglet ouvert : liste des fenêtres et onglets, retrouver un onglet déjà ouvert, l'activer, en ouvrir ou en fermer, lire, cliquer, saisir, faire défiler, capturer, fouiller l'historique.
 
-Navigateurs : Chrome, Edge, Brave, Arc, Vivaldi, Opera (Chromium ≥ 116) et Firefox (≥ 128). Safari n'est pas pris en charge.
+Navigateurs : Chrome, Edge, Brave, Arc, Vivaldi, Opera, Comet (Chromium ≥ 116) et Firefox (≥ 128). Safari n'est pas pris en charge.
 
 ## Installer en une commande
 
@@ -27,7 +27,7 @@ Télécharge la dernière release, vérifie son empreinte SHA-256, l'installe sa
 
 1. Installer le morph. Il lance un serveur local (`127.0.0.1`, port 17421 par défaut).
 2. Dans le navigateur :
-   - **Chrome, Edge, Brave, Arc, Vivaldi, Opera** : `chrome://extensions` (ou `edge://extensions`…) → mode développeur → **Charger l'extension non empaquetée** → dossier `extension/` du morph.
+   - **Chrome, Edge, Brave, Arc, Vivaldi, Opera, Comet** : `chrome://extensions` (ou `edge://extensions`…) → mode développeur → **Charger l'extension non empaquetée** → dossier `extension/` du morph.
    - **Firefox** : `about:debugging#/runtime/this-firefox` → **Charger un module complémentaire temporaire** → fichier `extension-firefox/manifest.json`. Puis, dans `about:addons` → l'extension → Autorisations, accordez l'accès à **tous les sites** : Firefox ne l'accorde pas à l'installation, et sans lui l'extension ne peut lire aucune page. Un module temporaire disparaît à la fermeture de Firefox ; un module permanent exige une extension signée (publication sur addons.mozilla.org, pas encore faite).
 3. Relier : dans Locaryn, Réglages de l'extension → **Relier au navigateur** (ou demandez « relie mon navigateur » dans le chat). Le navigateur choisi — « auto » : celui de l'ordinateur — ouvre une page de guide qui donne l'adresse de sa page des extensions et le chemin du dossier, chacun avec un bouton Copier ; le dossier s'ouvre aussi dans l'explorateur et son chemin est déjà dans le presse-papiers. Les navigateurs Chromium refusent qu'un autre programme ouvre leurs pages internes : d'où l'adresse à coller. Une fois l'extension chargée, elle se relie seule dans les deux minutes, sans code à recopier. Le code d'appairage reste dans `pairing-token` (`%APPDATA%\locaryn\morph-browser\` sous Windows) pour un appairage à la main depuis l'icône de l'extension.
 
