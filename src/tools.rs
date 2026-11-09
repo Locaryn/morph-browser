@@ -7,7 +7,9 @@
 
 use crate::bridge::{load_or_create_token, Bridge};
 use crate::config::BrowserConfig;
-use crate::liaison::{dossier_extension, ouvrir_dossier, Navigateur, DUREE_APPAIRAGE};
+use crate::liaison::{
+    copier, dossier_extension, ouvrir_dossier, par_defaut, Navigateur, DUREE_APPAIRAGE,
+};
 use base64::Engine;
 use locaryn_morph_kit::laya::{read_config, Candidate, Laya};
 use locaryn_morph_kit::mcp::{str_prop, tool};
@@ -143,25 +145,30 @@ impl Browser {
             }));
         }
         self.bridge.ouvrir_appairage(DUREE_APPAIRAGE).await;
-        let dossier = dossier_extension();
+        // « auto » ou rien : le navigateur par défaut du système.
+        let navigateur = Navigateur::depuis(&choisi).unwrap_or_else(par_defaut);
+        let dossier = dossier_extension(navigateur.dossier);
+        let chemin = dossier.as_ref().map(|d| d.display().to_string());
+        let chemin_copie = chemin.as_deref().is_some_and(copier);
         let dossier_ouvert = dossier.as_ref().is_some_and(|d| ouvrir_dossier(d));
-        let navigateur = Navigateur::depuis(&choisi);
-        let page_ouverte = navigateur.is_some_and(|n| n.ouvrir_page_extensions());
-        let page = navigateur.map_or("chrome://extensions", |n| n.page);
+        // Firefox ouvre sa page interne ; les navigateurs Chromium l'ignorent
+        // en silence. La page de guide, elle, s'ouvre partout et passe devant.
+        let page_ouverte = navigateur.ouvrir_page_extensions();
+        let guide = crate::guide::ecrire(&navigateur, chemin.as_deref());
+        let guide_ouvert = guide
+            .as_ref()
+            .is_some_and(|g| navigateur.ouvrir(&g.display().to_string()));
         Ok(json!({
+            "guide_page": guide.as_ref().map(|g| g.display().to_string()),
+            "guide_page_opened": guide_ouvert,
+            "browser": navigateur.nom,
             "pairing_window_seconds": DUREE_APPAIRAGE.as_secs(),
-            "extension_folder": dossier.as_ref().map(|d| d.display().to_string()),
+            "extension_folder": chemin,
+            "folder_path_copied": chemin_copie,
             "folder_opened": dossier_ouvert,
-            "extensions_page": page,
+            "extensions_page": navigateur.page,
             "extensions_page_opened": page_ouverte,
-            "message": format!(
-                "1) Dans le navigateur, ouvrez {page} (déjà ouvert si possible) et activez le mode développeur. \
-                 2) « Charger l'extension non empaquetée » et choisissez le dossier {} (déjà ouvert dans l'explorateur). \
-                 3) C'est tout : dans les {} secondes, l'extension se relie seule à Locaryn, sans code. \
-                 Après ce délai, rappelez browser_link.",
-                dossier.as_ref().map_or("`extension` du morph".into(), |d| format!("« {} »", d.display())),
-                DUREE_APPAIRAGE.as_secs()
-            ),
+            "message": consigne(&navigateur, chemin.as_deref(), chemin_copie),
         }))
     }
 
@@ -396,6 +403,38 @@ impl Browser {
 
 // ── Utilitaires ─────────────────────────────────────────────────────────────
 
+/// Les gestes qui restent à la personne, pour le navigateur ouvert.
+fn consigne(navigateur: &Navigateur, chemin: Option<&str>, copie: bool) -> String {
+    let dossier = chemin.map_or_else(
+        || format!("`{}` du morph", navigateur.dossier),
+        |c| format!("« {c} »"),
+    );
+    let colle = if copie {
+        " (son chemin est copié : collez-le dans la fenêtre)"
+    } else {
+        ""
+    };
+    let gestes = if navigateur.nom == "firefox" {
+        format!(
+            "Une page de guide est ouverte dans Firefox. 1) Ouvrez {} et cliquez « Charger un module complémentaire temporaire ». \
+             2) Choisissez le fichier manifest.json du dossier {dossier}{colle}. \
+             3) Dans about:addons → l'extension → Autorisations, accordez l'accès à tous les sites.",
+            navigateur.page
+        )
+    } else {
+        format!(
+            "Une page de guide est ouverte dans le navigateur. 1) Collez l'adresse {} dans un nouvel onglet et activez le « Mode développeur ». \
+             2) Cliquez « Charger l'extension non empaquetée » et choisissez le dossier {dossier}{colle}.",
+            navigateur.page
+        )
+    };
+    format!(
+        "{gestes} C'est tout : dans les {} secondes, l'extension se relie seule à Locaryn, sans code. \
+         Après ce délai, rappelez browser_link.",
+        DUREE_APPAIRAGE.as_secs()
+    )
+}
+
 fn passthrough(tool: &str) -> Option<&'static str> {
     Some(match tool {
         "browser_list_tabs" => "tabs_list",
@@ -482,7 +521,7 @@ fn ref_props() -> Value {
 fn tab_tools() -> Vec<Value> {
     vec![
         tool("browser_status", "État du pont avec le navigateur : extension connectée, onglets arrêtés par l'utilisateur.", json!({}), &[]),
-        tool("browser_link", "Relie le navigateur de la personne à Locaryn : ouvre la page des extensions du navigateur et le dossier de l'extension, puis l'extension se relie seule pendant deux minutes, sans code. À appeler quand browser_status dit que l'extension n'est pas reliée.", json!({ "browser": { "type": "string", "enum": ["chrome", "edge", "opera", "brave", "vivaldi"], "description": "Le navigateur de la personne ; omis : celui des réglages du morph." } }), &[]),
+        tool("browser_link", "Relie le navigateur de la personne à Locaryn : ouvre la page de chargement d'extension du navigateur et le dossier de l'extension (chemin copié), puis l'extension se relie seule pendant deux minutes, sans code. À appeler quand browser_status dit que l'extension n'est pas reliée.", json!({ "browser": { "type": "string", "enum": ["auto", "chrome", "edge", "opera", "brave", "vivaldi", "firefox"], "description": "Le navigateur de la personne ; omis : celui des réglages du morph, « auto » : celui du système." } }), &[]),
         tool("browser_list_tabs", "Liste tous les onglets ouverts, dans toutes les fenêtres (titre, adresse, actif, épinglé, son en cours). `query` filtre par titre ou adresse.", json!({ "query": str_prop("Filtre sur le titre ou l'adresse"), "window_id": { "type": "integer" } }), &[]),
         tool("browser_find_tab", "Retrouve, parmi les onglets déjà ouverts, celui qui correspond à une description (« le devis chez Leroy Merlin », « ma boîte mail »).", json!({ "description": str_prop("Ce que l'onglet contient ou montre") }), &["description"]),
         tool("browser_focus_tab", "Met un onglet au premier plan (et sa fenêtre).", json!({ "tab_id": tab_prop() }), &["tab_id"]),

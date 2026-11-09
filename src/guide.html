@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relier {{NOM}} à Locaryn</title>
+<style>
+  :root {
+    --fond: #f6f6f4; --carte: #ffffff; --texte: #1d1d1b; --doux: #6b6b66;
+    --bord: #e2e2dd; --accent: #4f7a5c; --accent-fond: #e8efe9; --sur-accent: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fond: #141413; --carte: #1c1c1a; --texte: #ecece8; --doux: #9a9a93;
+      --bord: #2c2c29; --accent: #7fae8c; --accent-fond: #1f2a22; --sur-accent: #0f1a12;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fond); color: var(--texte);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { width: 100%; max-width: 640px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sous { color: var(--doux); margin: 0 0 32px; }
+  ol { list-style: none; counter-reset: etape; margin: 0; padding: 0; display: grid; gap: 12px; }
+  li {
+    counter-increment: etape; background: var(--carte); border: 1px solid var(--bord);
+    border-radius: 12px; padding: 18px 16px 16px 56px; position: relative; min-width: 0;
+  }
+  li::before {
+    content: counter(etape); position: absolute; left: 16px; top: 14px;
+    width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--accent-fond); color: var(--accent); font-weight: 600; font-size: 14px;
+  }
+  li p { margin: 0 0 8px; overflow-wrap: anywhere; }
+  li p:last-child { margin-bottom: 0; }
+  li::before { line-height: 1; }
+  .champ { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .champ input { flex: 1 1 200px; }
+  input {
+    flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid var(--bord); background: var(--fond); color: var(--texte);
+    font: 13px ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  button {
+    min-height: 44px; min-width: 96px; padding: 0 16px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--sur-accent); font: inherit; font-weight: 500;
+    transition: transform 120ms ease, opacity 120ms ease;
+  }
+  button:hover { opacity: 0.9; }
+  button:active { transform: scale(0.97); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.fait { background: transparent; color: var(--accent); }
+  .note { color: var(--doux); font-size: 13px; margin-top: 24px; }
+  kbd {
+    font: 12px ui-monospace, Consolas, monospace; padding: 1px 6px; border-radius: 4px;
+    border: 1px solid var(--bord); background: var(--fond);
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Relier {{NOM}} à Locaryn</h1>
+  <p class="sous">Un navigateur n'installe une extension hors de sa boutique qu'avec votre accord : trois gestes, une seule fois.</p>
+  <ol>
+{{ETAPES}}
+  </ol>
+  <p class="note">Une fois l'extension chargée, elle se relie seule à Locaryn dans les deux minutes, sans code à recopier. Vous pouvez fermer cette page.</p>
+</main>
+<script>
+  document.querySelectorAll("[data-copier]").forEach(function (bouton) {
+    bouton.addEventListener("click", function () {
+      var champ = document.getElementById(bouton.dataset.copier);
+      champ.select();
+      var fini = function () {
+        bouton.textContent = "Copié ✓";
+        bouton.classList.add("fait");
+        setTimeout(function () {
+          bouton.textContent = "Copier";
+          bouton.classList.remove("fait");
+        }, 1800);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(champ.value).then(fini, function (e) {
+          console.warn("presse-papiers refusé, copie par sélection :", e);
+          document.execCommand("copy");
+          fini();
+        });
+      } else {
+        document.execCommand("copy");
+        fini();
+      }
+    });
+  });
+</script>
+</body>
+</html>
