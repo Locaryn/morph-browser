@@ -1,9 +1,9 @@
 //! Relier le navigateur de la personne : trouver le dossier de l'extension,
-//! l'ouvrir dans l'explorateur, copier son chemin, et ouvrir la page du
+//! copier son chemin, et ouvrir la page du
 //! navigateur où l'on charge une extension. Le chargement reste un geste de la
 //! personne : hors de leur boutique, aucun navigateur ne permet de l'imposer.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -262,20 +262,7 @@ fn sans_console(c: &mut Command) {
     let _ = c;
 }
 
-/// Ouvre un dossier dans l'explorateur de fichiers du système.
-pub fn ouvrir_dossier(dossier: &Path) -> bool {
-    let programme = if cfg!(windows) {
-        "explorer"
-    } else if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    lancer(Command::new(programme).arg(dossier))
-}
-
-/// Lance sans attendre ni ouvrir de console. `explorer` rend un code non nul
-/// même quand il réussit : seul l'échec du lancement compte.
+/// Lance sans attendre ni ouvrir de console : seul l'échec du lancement compte.
 fn lancer(c: &mut Command) -> bool {
     sans_console(c);
     // Un navigateur lancé d'ici garderait sinon la sortie du serveur MCP — le

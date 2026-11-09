@@ -7,9 +7,7 @@
 
 use crate::bridge::{load_or_create_token, Bridge};
 use crate::config::BrowserConfig;
-use crate::liaison::{
-    copier, dossier_extension, ouvrir_dossier, par_defaut, Navigateur, DUREE_APPAIRAGE,
-};
+use crate::liaison::{copier, dossier_extension, par_defaut, Navigateur, DUREE_APPAIRAGE};
 use base64::Engine;
 use locaryn_morph_kit::laya::{read_config, Candidate, Laya};
 use locaryn_morph_kit::mcp::{str_prop, tool};
@@ -150,7 +148,6 @@ impl Browser {
         let dossier = dossier_extension(navigateur.dossier);
         let chemin = dossier.as_ref().map(|d| d.display().to_string());
         let chemin_copie = chemin.as_deref().is_some_and(copier);
-        let dossier_ouvert = dossier.as_ref().is_some_and(|d| ouvrir_dossier(d));
         // Firefox ouvre sa page interne ; les navigateurs Chromium l'ignorent
         // en silence. La page de guide, elle, s'ouvre partout et passe devant.
         let page_ouverte = navigateur.ouvrir_page_extensions();
@@ -165,7 +162,6 @@ impl Browser {
             "pairing_window_seconds": DUREE_APPAIRAGE.as_secs(),
             "extension_folder": chemin,
             "folder_path_copied": chemin_copie,
-            "folder_opened": dossier_ouvert,
             "extensions_page": navigateur.page,
             "extensions_page_opened": page_ouverte,
             "message": consigne(&navigateur, chemin.as_deref(), chemin_copie),
@@ -521,7 +517,7 @@ fn ref_props() -> Value {
 fn tab_tools() -> Vec<Value> {
     vec![
         tool("browser_status", "État du pont avec le navigateur : extension connectée, onglets arrêtés par l'utilisateur.", json!({}), &[]),
-        tool("browser_link", "Relie le navigateur de la personne à Locaryn : ouvre la page de chargement d'extension du navigateur et le dossier de l'extension (chemin copié), puis l'extension se relie seule pendant deux minutes, sans code. À appeler quand browser_status dit que l'extension n'est pas reliée.", json!({ "browser": { "type": "string", "enum": ["auto", "chrome", "edge", "opera", "brave", "vivaldi", "comet", "firefox"], "description": "Le navigateur de la personne ; omis : celui des réglages du morph, « auto » : celui du système." } }), &[]),
+        tool("browser_link", "Relie le navigateur de la personne à Locaryn : ouvre une page de guide dans le navigateur choisi (chemin du dossier de l'extension copié), puis l'extension se relie seule pendant deux minutes, sans code. À appeler quand browser_status dit que l'extension n'est pas reliée.", json!({ "browser": { "type": "string", "enum": ["auto", "chrome", "edge", "opera", "brave", "vivaldi", "comet", "firefox"], "description": "Le navigateur de la personne ; omis : celui des réglages du morph, « auto » : celui du système." } }), &[]),
         tool("browser_list_tabs", "Liste tous les onglets ouverts, dans toutes les fenêtres (titre, adresse, actif, épinglé, son en cours). `query` filtre par titre ou adresse.", json!({ "query": str_prop("Filtre sur le titre ou l'adresse"), "window_id": { "type": "integer" } }), &[]),
         tool("browser_find_tab", "Retrouve, parmi les onglets déjà ouverts, celui qui correspond à une description (« le devis chez Leroy Merlin », « ma boîte mail »).", json!({ "description": str_prop("Ce que l'onglet contient ou montre") }), &["description"]),
         tool("browser_focus_tab", "Met un onglet au premier plan (et sa fenêtre).", json!({ "tab_id": tab_prop() }), &["tab_id"]),
