@@ -14,17 +14,15 @@ const state = {
   lastTabId: null,
   live: new Set(), // onglets dont le cadre est actuellement affiché
   blocked: new Set(),
-  groupTabs: false,
   reconnectTimer: null,
 };
 
 // ── Connexion au serveur ────────────────────────────────────────────────────
 
 async function loadConfig() {
-  const c = await api.storage.local.get(["token", "port", "groupTabs"]);
+  const c = await api.storage.local.get(["token", "port"]);
   state.token = (c.token || "").trim();
   state.port = Number(c.port) || DEFAULT_PORT;
-  state.groupTabs = Boolean(c.groupTabs);
 }
 
 const VERT = "#3e8c66";
@@ -193,14 +191,6 @@ async function markControlled(tab, label) {
   state.live.add(tab.id);
   api.action.setBadgeText({ tabId: tab.id, text: "◉" });
   await sendToTab(tab.id, { type: "overlay", on: true, label });
-  if (state.groupTabs && tab.groupId === -1) {
-    try {
-      const gid = await api.tabs.group({ tabIds: [tab.id] });
-      await api.tabGroups.update(gid, { title: "Locaryn", color: "green" });
-    } catch (e) {
-      console.warn("Locaryn : groupe d'onglets", e);
-    }
-  }
 }
 
 /** Exécute une commande dans la page, avec cadre animé et pastille. */

@@ -2,7 +2,7 @@
   "$schema": "https://locaryn.dev/schema/morph.json/v0.1",
   "apiVersion": "0.1",
   "name": "morph-browser",
-  "version": "0.1.0-beta.12",
+  "version": "0.1.0-beta.13",
   "description": "Pilote tout le navigateur, pas un seul onglet : retrouve les onglets déjà ouverts, lit, clique, saisit, navigue. Un cadre animé et une pastille signalent chaque onglet contrôlé, avec un bouton Stop. Les décisions rapides (quel élément, quel onglet, action risquée ?) passent par un petit modèle local installé par Locaryn.",
   "author": "Locaryn Team",
   "license": "Apache-2.0",
@@ -51,7 +51,7 @@
             "label": "Relier au navigateur",
             "kind": "action",
             "tool": "browser_link",
-            "hint": "Ouvre la page où charger l'extension et son dossier, et copie son chemin : collez-le dans « Charger l'extension non empaquetée ». Elle se relie seule dans les deux minutes, sans code."
+            "hint": "Ouvre la page où charger l'extension et copie le chemin de son dossier : collez-le dans « Charger l'extension non empaquetée ». Elle se relie seule dans les deux minutes, sans code."
           }
         ]
       }
@@ -75,6 +75,14 @@
   "beta": true,
   "stability": "untested",
   "versions": [
+    {
+      "version": "0.1.0-beta.13",
+      "is_beta": true,
+      "summary": "Le modèle range n'importe quels onglets ouverts en groupes nommés et colorés ; la case « groupe Locaryn » disparaît",
+      "tag": "v0.1.0-beta.13",
+      "released_at": "2026-11-10",
+      "install_source": "Locaryn/morph-browser#v0.1.0-beta.13"
+    },
     {
       "version": "0.1.0-beta.12",
       "is_beta": true,

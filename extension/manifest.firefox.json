@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Locaryn — contrôle du navigateur",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Laisse Locaryn lister, ouvrir et piloter vos onglets. Un cadre animé et une pastille signalent chaque onglet contrôlé ; le bouton Stop reprend la main.",
   "permissions": ["tabs", "scripting", "storage", "alarms", "history"],
   "host_permissions": ["<all_urls>"],

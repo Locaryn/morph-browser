@@ -15,10 +15,9 @@ async function refresh() {
 }
 
 async function init() {
-  const c = await api.storage.local.get(["token", "port", "groupTabs"]);
+  const c = await api.storage.local.get(["token", "port"]);
   $("token").value = c.token || "";
   $("port").value = c.port || 17421;
-  $("group").checked = Boolean(c.groupTabs);
   await refresh();
 }
 
@@ -26,7 +25,6 @@ $("save").addEventListener("click", async () => {
   await api.storage.local.set({
     token: $("token").value.trim(),
     port: Number($("port").value) || 17421,
-    groupTabs: $("group").checked,
   });
   setTimeout(refresh, 800);
 });
