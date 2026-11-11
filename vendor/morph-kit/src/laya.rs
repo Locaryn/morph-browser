@@ -21,6 +21,19 @@ use tokio::time::timeout;
 
 use crate::text::lexical_score;
 
+/// `CREATE_NO_WINDOW` : lancé par un serveur sans fenêtre, Python ouvrait sa
+/// propre console noire, visible à l'écran à chaque décision.
+#[cfg(windows)]
+const SANS_FENETRE: u32 = 0x0800_0000;
+
+/// Empêcher la console de Python d'apparaître.
+fn sans_console_tokio(commande: &mut Command) {
+    #[cfg(windows)]
+    commande.creation_flags(SANS_FENETRE);
+    #[cfg(not(windows))]
+    let _ = commande;
+}
+
 const SCRIPT: &str = include_str!("../python/laya_server.py");
 /// Au-delà d'une vingtaine d'options Laya perd en précision : on procède par
 /// tournoi de groupes de cette taille.
@@ -325,7 +338,9 @@ impl Laya {
                 .to_string()
         })?;
         let script = write_script()?;
-        let mut child = Command::new(&python)
+        let mut commande = Command::new(&python);
+        sans_console_tokio(&mut commande);
+        let mut child = commande
             .envs(python_env(&self.config))
             .arg("-u")
             .arg(&script)
@@ -486,9 +501,14 @@ pub fn find_python() -> Option<String> {
             return Some(exe.to_string_lossy().to_string());
         }
     }
-    let sonde = std::process::Command::new("python")
-        .arg("--version")
-        .output();
+    let mut essai = std::process::Command::new("python");
+    essai.arg("--version");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        essai.creation_flags(SANS_FENETRE);
+    }
+    let sonde = essai.output();
     if matches!(sonde, Ok(o) if o.status.success()) {
         return Some("python".to_string());
     }
