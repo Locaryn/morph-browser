@@ -58,6 +58,7 @@ function connect() {
       token: state.token,
       browser: navigator.userAgent,
       version: api.runtime.getManifest().version,
+      version_name: versionName(),
     }));
   };
   ws.onmessage = (ev) => onServerMessage(ws, ev.data);
@@ -93,6 +94,8 @@ async function onServerMessage(ws, raw) {
   if (msg.type === "welcome") {
     state.connected = true;
     setBadge("●");
+    // Le nom sous lequel Locaryn connaît ce navigateur (« comet », « opera »…).
+    if (typeof msg.label === "string") await sessionStore().set({ [LABEL_KEY]: msg.label });
     return;
   }
   if (msg.type === "refused") {
@@ -116,6 +119,10 @@ async function onServerMessage(ws, raw) {
   }
   if (msg.type === "panel_reply") {
     await panelAddReply(msg);
+    return;
+  }
+  if (msg.type === "panel_models") {
+    await panelSetModels(msg);
     return;
   }
   if (msg.id === undefined || !msg.method) return;
@@ -449,6 +456,8 @@ async function dispatch(method, params) {
 
 const PANEL_KEY = "panel";
 const DRAFT_KEY = "panelDraft";
+const MODELS_KEY = "panelModels";
+const LABEL_KEY = "browserLabel";
 const PANEL_MAX = 60;
 
 function sessionStore() {
@@ -502,6 +511,35 @@ async function panelSend(text, attachment) {
   await sessionStore().remove(DRAFT_KEY);
   notifyServer({ event: "panel_message", message });
   return { id: message.id };
+}
+
+/** La version lisible (« 0.1.0-beta.17 »), la même que celle du morph. */
+function versionName() {
+  const m = api.runtime.getManifest();
+  return m.version_name || m.version;
+}
+
+/** Les modèles de la conversation ouverte dans Locaryn, pour le sélecteur. */
+async function panelSetModels(msg) {
+  const installed = Array.isArray(msg.installed)
+    ? msg.installed.filter((t) => typeof t === "string" && t)
+    : [];
+  const active = typeof msg.active === "string" ? msg.active : "";
+  await sessionStore().set({ [MODELS_KEY]: { active, installed, at: Date.now() } });
+}
+
+/** Change le modèle de la conversation : Locaryn l'applique à la relève. */
+async function panelSelectModel(model) {
+  const tag = String(model || "").trim();
+  if (!tag) throw new Error("Modèle vide.");
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN || !state.connected) {
+    throw new Error("Locaryn n'est pas relié.");
+  }
+  notifyServer({ event: "panel_message", message: { id: newId(), kind: "model", model: tag, at: Date.now() } });
+  const r = await sessionStore().get(MODELS_KEY);
+  const courant = r[MODELS_KEY] || { installed: [] };
+  await sessionStore().set({ [MODELS_KEY]: { ...courant, active: tag, at: Date.now() } });
+  return { ok: true };
 }
 
 async function panelMarkDelivered(ids) {
@@ -628,6 +666,7 @@ function answerAsync(promise, reply) {
 
 api.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === "panel_send") return answerAsync(panelSend(msg.text, msg.attachment), reply);
+  if (msg.type === "panel_model") return answerAsync(panelSelectModel(msg.model), reply);
   if (msg.type === "panel_clear") {
     return answerAsync(panelSave({ messages: [] }).then(() => ({ ok: true })), reply);
   }
@@ -644,7 +683,12 @@ api.runtime.onMessage.addListener((msg, sender, reply) => {
     api.action.setBadgeText({ tabId: sender.tab.id, text: "" });
     reply({ ok: true });
   } else if (msg.type === "popup_status") {
-    reply({ connected: state.connected, blocked: [...state.blocked], hasToken: Boolean(state.token) });
+    reply({
+      connected: state.connected,
+      blocked: [...state.blocked],
+      hasToken: Boolean(state.token),
+      version: versionName(),
+    });
   } else if (msg.type === "unblock_all") {
     state.blocked.clear();
     reply({ ok: true });

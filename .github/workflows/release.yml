@@ -29,6 +29,7 @@ jobs:
           set -euo pipefail
           for f in extension/*.js; do node --check "$f"; done
           for f in extension/manifest.json extension/manifest.firefox.json; do node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))"; done
+          node scripts/sync-version.mjs --check
           if [ -f scripts/check-catalogue.mjs ]; then node scripts/check-catalogue.mjs; fi
 
   bundle:

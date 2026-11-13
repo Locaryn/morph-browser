@@ -24,6 +24,8 @@ Télécharge la dernière release, vérifie son empreinte SHA-256, l'installe sa
 - Le cadre reste affiché pendant toute la tâche ; `browser_release` le retire, et un filet de sécurité l'efface après 3 min sans commande.
 - **Barre latérale** (clic sur l'icône de l'extension) : un chat pour donner une consigne à Locaryn sans quitter la page. La consigne part dans la conversation ouverte de Locaryn (l'application doit être ouverte), avec l'onglet d'où elle vient ; la réponse revient dans la barre. Les réglages (code, port, onglets arrêtés) sont derrière `⋯`.
 - **Clic droit › « Demander à Locaryn »** : ouvre la barre latérale et joint la sélection (ou le lien, l'image, la page).
+- **Sélecteur de modèle** en bas de la barre latérale : le modèle de la conversation ouverte dans Locaryn (Locaryn après la 0.4.74).
+- **Plusieurs navigateurs** peuvent être reliés en même temps (Comet, Opera, Chrome…). Chacun est nommé d'après le programme qui tient la connexion (`comet`, `opera`, `chrome`, `chrome 2` pour un second profil) ; les outils prennent `browser` pour viser l'un d'eux, sinon le navigateur des réglages, sinon le dernier relié. Le bouton **Navigateurs reliés** du panneau du morph les liste avec la version de leur extension.
 
 ## Installation
 
@@ -38,6 +40,8 @@ Le pont refuse toute origine qui n'est pas une extension de navigateur et tout c
 ### Mettre à jour l'extension
 
 L'extension est chargée « non empaquetée » depuis le dossier `extension/` du morph : une mise à jour du morph remplace ce dossier, mais le navigateur garde l'ancien code tant qu'il ne l'a pas relu.
+
+L'extension porte la version du morph : morph `0.1.0-beta.17` → extension `0.1.0.17` (Chrome n'accepte que des chiffres), affichée « Extension 0.1.0-beta.17 » dans la barre latérale. `node scripts/sync-version.mjs` aligne les manifestes sur `morph.json` ; la CI refuse une release désalignée.
 
 - **Depuis l'extension 0.2.0** : rien à faire. À la connexion, le serveur compare la version de l'extension à celle du dossier et lui demande de se recharger (une fois par version).
 - **Extension 0.1.x (une seule fois)** : ouvrez `chrome://extensions` (Comet : la même adresse), repérez « Locaryn — contrôle du navigateur » et cliquez sur la flèche circulaire **Recharger**. Si l'extension avait été chargée depuis un autre dossier, retirez-la et rechargez le dossier `extension/` du morph installé (`~/.lochor/plugins/morph-browser/extension`).

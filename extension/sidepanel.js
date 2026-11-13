@@ -5,6 +5,8 @@ const api = typeof browser !== "undefined" ? browser : chrome; // Firefox expose
 
 const PANEL_KEY = "panel";
 const DRAFT_KEY = "panelDraft";
+const MODELS_KEY = "panelModels";
+const LABEL_KEY = "browserLabel";
 /** Au-delà, une consigne non relevée laisse penser que Locaryn est fermé. */
 const UNDELIVERED_MS = 8000;
 
@@ -17,7 +19,16 @@ const view = {
   connected: false,
   sending: false,
   seen: new Set(),
+  models: null,
+  label: "",
+  switching: false,
 };
+
+/** La version lisible (« 0.1.0-beta.17 »), la même que celle du morph. */
+function versionName() {
+  const m = api.runtime.getManifest();
+  return m.version_name || m.version;
+}
 
 // ── Rendu ───────────────────────────────────────────────────────────────────
 
@@ -119,6 +130,36 @@ function renderState() {
   $("send").classList.toggle("loading", view.sending);
 }
 
+/** Le sélecteur de modèle : caché tant que Locaryn n'a pas donné sa liste. */
+function renderModels() {
+  const m = view.models;
+  const row = $("model-row");
+  const select = $("model");
+  const tags = m && Array.isArray(m.installed) ? [...m.installed] : [];
+  if (m && m.active && !tags.includes(m.active)) tags.unshift(m.active);
+  row.hidden = !view.connected || tags.length === 0;
+  if (row.hidden) return;
+  const actuels = [...select.options].map((o) => o.value).join("\n");
+  if (actuels !== tags.join("\n")) {
+    select.replaceChildren(...tags.map((t) => {
+      const o = document.createElement("option");
+      o.value = t;
+      o.textContent = t;
+      return o;
+    }));
+  }
+  select.value = m.active || tags[0];
+  select.disabled = view.switching;
+}
+
+function renderVersion() {
+  const navigateur = view.label ? ` · ${view.label}` : "";
+  const texte = `Extension ${versionName()}${navigateur}`;
+  $("version").textContent = texte;
+  $("empty-version").textContent = texte;
+  $("state").title = texte;
+}
+
 function showError(text) {
   $("error").hidden = !text;
   $("error").textContent = text || "";
@@ -127,13 +168,17 @@ function showError(text) {
 // ── État ────────────────────────────────────────────────────────────────────
 
 async function loadAll() {
-  const r = await store.get([PANEL_KEY, DRAFT_KEY]);
+  const r = await store.get([PANEL_KEY, DRAFT_KEY, MODELS_KEY, LABEL_KEY]);
   const p = r[PANEL_KEY];
   view.messages = p && Array.isArray(p.messages) ? p.messages : [];
   view.draft = r[DRAFT_KEY] || null;
+  view.models = r[MODELS_KEY] || null;
+  view.label = typeof r[LABEL_KEY] === "string" ? r[LABEL_KEY] : "";
   renderThread();
   renderDraft();
   renderState();
+  renderModels();
+  renderVersion();
 }
 
 async function refreshStatus() {
@@ -146,10 +191,11 @@ async function refreshStatus() {
     view.connected = false;
   }
   renderState();
+  renderModels();
 }
 
 api.storage.onChanged.addListener((changes) => {
-  if (PANEL_KEY in changes || DRAFT_KEY in changes) {
+  if (PANEL_KEY in changes || DRAFT_KEY in changes || MODELS_KEY in changes || LABEL_KEY in changes) {
     loadAll().catch((e) => console.warn("Locaryn : conversation illisible", e));
   }
 });
@@ -239,7 +285,23 @@ $("unblock").addEventListener("click", async () => {
   refreshStatus();
 });
 
-$("version").textContent = `Version ${api.runtime.getManifest().version}`;
+$("model").addEventListener("change", async (e) => {
+  const tag = e.target.value;
+  view.switching = true;
+  renderModels();
+  showError("");
+  try {
+    const r = await api.runtime.sendMessage({ type: "panel_model", model: tag });
+    if (r && r.error) showError(r.error);
+  } catch (err) {
+    showError(String(err && err.message ? err.message : err));
+  } finally {
+    view.switching = false;
+    renderModels();
+  }
+});
+
+renderVersion();
 
 loadAll().catch((e) => console.warn("Locaryn : conversation illisible", e));
 refreshStatus();

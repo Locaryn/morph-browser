@@ -302,22 +302,16 @@ pub fn version_du_dossier(dossier: &Path) -> Option<String> {
         .map(str::to_string)
 }
 
-/// `true` si `a` est strictement plus récente que `b` (`0.2.0` > `0.1.3`).
-pub fn plus_recente(a: &str, b: &str) -> bool {
-    let nombres = |v: &str| -> Vec<u64> {
-        v.split('.')
-            .map(|p| p.trim().parse::<u64>().unwrap_or(0))
-            .collect()
-    };
-    let (pa, pb) = (nombres(a), nombres(b));
-    for i in 0..pa.len().max(pb.len()) {
-        let x = pa.get(i).copied().unwrap_or(0);
-        let y = pb.get(i).copied().unwrap_or(0);
-        if x != y {
-            return x > y;
-        }
-    }
-    false
+/// La version lisible de l'extension d'un dossier : `version_name`
+/// (« 0.1.0-beta.17 ») si le manifeste en a une, sinon `version`.
+pub fn nom_de_version_du_dossier(dossier: &Path) -> Option<String> {
+    let texte = std::fs::read_to_string(dossier.join("manifest.json")).ok()?;
+    let manifeste: serde_json::Value = serde_json::from_str(&texte).ok()?;
+    manifeste
+        .get("version_name")
+        .or_else(|| manifeste.get("version"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
 }
 
 /// Le dossier de l'extension livré avec le morph (`extension`, ou
@@ -453,14 +447,6 @@ mod tests {
             chrome.cibles_liaison(None),
             vec!["chrome://extensions".to_string()]
         );
-    }
-
-    #[test]
-    fn les_versions_se_comparent_par_nombres() {
-        assert!(plus_recente("0.2.0", "0.1.3"));
-        assert!(plus_recente("0.1.10", "0.1.9"));
-        assert!(!plus_recente("0.1.3", "0.1.3"));
-        assert!(!plus_recente("0.1.3", "0.2"));
     }
 
     #[test]

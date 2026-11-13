@@ -56,8 +56,10 @@ impl Browser {
     pub async fn new() -> Result<Self, String> {
         let cfg: BrowserConfig = read_config();
         let token = load_or_create_token()?;
+        let bridge = Bridge::start(cfg.port, token).await;
+        bridge.preferer(&cfg.browser).await;
         Ok(Self {
-            bridge: Bridge::start(cfg.port, token).await,
+            bridge,
             laya: Arc::new(Laya::new()),
             warmed: AtomicBool::new(false),
             cfg,
@@ -74,6 +76,8 @@ impl Browser {
             "browser_link" => self.link(&args).await,
             "ui_panel_inbox" => self.panel_inbox().await,
             "ui_panel_reply" => self.panel_reply(&args).await,
+            "ui_panel_models" => self.panel_models(&args).await,
+            "ui_browsers" => self.browsers().await,
             "browser_find_tab" => self.find_tab(&args).await,
             "browser_snapshot" => self.snapshot(args).await,
             "browser_find_element" => self.find_element(&args).await,
@@ -111,11 +115,14 @@ impl Browser {
     // ── État ────────────────────────────────────────────────────────────────
 
     async fn status(&self) -> Result<Value, String> {
-        let connected = self.bridge.is_connected().await;
+        let navigateurs = self.bridge.navigateurs().await;
+        let connected = !navigateurs.is_empty();
         let mut out = json!({
             "extension_connected": connected,
-            "browser": self.bridge.hello().await.and_then(|h| h.get("browser").cloned()),
-            "extension_version": self.bridge.hello().await.and_then(|h| h.get("version").cloned()),
+            // Plusieurs navigateurs peuvent être reliés : un outil vise l'un
+            // d'eux par `browser`, sinon le navigateur préféré des réglages.
+            "browsers": navigateurs,
+            "extension_version_shipped": version_livree(),
             "port": self.bridge.port,
             // Le modèle de décision local reste un détail interne : le
             // modèle de conversation n'a pas à le nommer à l'utilisateur.
@@ -152,23 +159,42 @@ impl Browser {
             .unwrap_or(depuis_reglages.as_str())
             .trim()
             .to_ascii_lowercase();
-        if self.bridge.is_connected().await {
+        self.bridge.preferer(&depuis_reglages).await;
+        let nomme = Navigateur::depuis(&choisi);
+        // Chaque navigateur se relie à part : Comet relié n'empêche pas de
+        // relier Opera. En « auto », un navigateur déjà relié suffit.
+        let deja = match nomme {
+            Some(n) => self.bridge.est_relie(n.nom).await,
+            None => self.bridge.is_connected().await,
+        };
+        if deja {
+            let navigateurs = self.bridge.navigateurs().await;
+            let message = match nomme {
+                Some(n) => format!("{} est déjà relié : rien à faire.", nom_affiche(n.nom)),
+                None => format!(
+                    "Déjà relié : {}. Pour relier un autre navigateur, choisissez-le dans la liste puis cliquez « Relier ».",
+                    liste_navigateurs(&navigateurs)
+                ),
+            };
             return Ok(json!({
                 "extension_connected": true,
-                "message": "L'extension est déjà reliée : rien à faire."
+                "browsers": navigateurs,
+                "message": message,
             }));
         }
-        self.bridge.ouvrir_appairage(DUREE_APPAIRAGE).await;
+        let vise = nomme.map(|n| n.nom);
+        self.bridge.ouvrir_appairage(DUREE_APPAIRAGE, vise).await;
         // Une extension déjà chargée et en attente se présente toutes les
         // trois secondes : elle reçoit le code seule, sans rien ouvrir.
-        if self.attendre_la_liaison(ATTENTE_AVANT_GUIDE).await {
+        if self.attendre_la_liaison(vise, ATTENTE_AVANT_GUIDE).await {
             return Ok(json!({
                 "extension_connected": true,
+                "browsers": self.bridge.navigateurs().await,
                 "message": "Extension reliée à Locaryn, sans code à recopier."
             }));
         }
         // « auto » ou rien : un navigateur ouvert, sinon celui du système.
-        let navigateur = Navigateur::depuis(&choisi).unwrap_or_else(choisir_auto);
+        let navigateur = nomme.unwrap_or_else(choisir_auto);
         let dossier = dossier_extension(navigateur.dossier);
         let chemin = dossier.as_ref().map(|d| d.display().to_string());
         let chemin_copie = chemin.as_deref().is_some_and(copier);
@@ -197,15 +223,47 @@ impl Browser {
         }))
     }
 
-    async fn attendre_la_liaison(&self, delai: Duration) -> bool {
+    async fn attendre_la_liaison(&self, vise: Option<&str>, delai: Duration) -> bool {
         let fin = Instant::now() + delai;
-        while Instant::now() < fin {
-            if self.bridge.is_connected().await {
-                return true;
+        loop {
+            let relie = match vise {
+                Some(nom) => self.bridge.est_relie(nom).await,
+                None => self.bridge.is_connected().await,
+            };
+            if relie || Instant::now() >= fin {
+                return relie;
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        self.bridge.is_connected().await
+    }
+
+    /// Les navigateurs reliés, pour le panneau du morph dans Locaryn.
+    async fn browsers(&self) -> Result<Value, String> {
+        let navigateurs = self.bridge.navigateurs().await;
+        let livree = version_livree();
+        let mut lignes: Vec<String> = navigateurs
+            .iter()
+            .map(|n| {
+                let nom = nom_affiche(n["browser"].as_str().unwrap_or("?"));
+                let version = n["extension_version"].as_str().unwrap_or("?");
+                let etat = match livree.as_deref() {
+                    Some(l) if l != version => format!(" (mise à jour vers {l} en cours)"),
+                    _ => String::new(),
+                };
+                format!("{nom} — extension {version}{etat}")
+            })
+            .collect();
+        if lignes.is_empty() {
+            lignes.push("Aucun navigateur relié.".into());
+        }
+        if let Some(l) = &livree {
+            lignes.push(format!("Version livrée avec le morph : {l}."));
+        }
+        Ok(json!({
+            "browsers": navigateurs,
+            "extension_version_shipped": livree,
+            "message": lignes.join(" · "),
+        }))
     }
 
     // ── Barre latérale de l'extension ───────────────────────────────────────
@@ -226,9 +284,29 @@ impl Browser {
         let text = text_arg(args, "text")?;
         let id = args.get("id").cloned().unwrap_or(Value::Null);
         let erreur = args.get("error").and_then(Value::as_bool).unwrap_or(false);
+        // La réponse revient à la barre latérale qui a posé la question.
+        let cible = args.get("browser").and_then(Value::as_str);
         self.bridge
-            .pousser(json!({ "type": "panel_reply", "id": id, "text": text, "error": erreur }))
+            .pousser(
+                json!({ "type": "panel_reply", "id": id, "text": text, "error": erreur }),
+                cible,
+            )
             .await?;
+        Ok(json!({ "delivered": true }))
+    }
+
+    /// La liste des modèles de la conversation, poussée aux barres latérales
+    /// pour leur sélecteur.
+    async fn panel_models(&self, args: &Value) -> Result<Value, String> {
+        if !self.bridge.is_connected().await {
+            return Ok(json!({ "delivered": false }));
+        }
+        let message = json!({
+            "type": "panel_models",
+            "active": args.get("active").cloned().unwrap_or(Value::Null),
+            "installed": args.get("installed").cloned().unwrap_or_else(|| json!([])),
+        });
+        self.bridge.pousser(message, None).await?;
         Ok(json!({ "delivered": true }))
     }
 
@@ -236,7 +314,8 @@ impl Browser {
 
     async fn find_tab(&self, args: &Value) -> Result<Value, String> {
         let wanted = text_arg(args, "description")?;
-        let tabs = self.bridge.call("tabs_list", json!({})).await?;
+        let params = json!({ "browser": args.get("browser").cloned().unwrap_or(Value::Null) });
+        let tabs = self.bridge.call("tabs_list", params).await?;
         let list = tabs["tabs"].as_array().cloned().unwrap_or_default();
         if list.is_empty() {
             return Err("Aucun onglet ouvert.".into());
@@ -244,9 +323,9 @@ impl Browser {
         let candidates: Vec<Candidate> = list
             .iter()
             .filter_map(|t| {
-                let id = t["tab_id"].as_u64()?;
+                t["tab_id"].as_u64()?;
                 Some(Candidate {
-                    id: format!("t{id}"),
+                    id: id_onglet(t),
                     description: format!(
                         "{} — {}",
                         t["title"].as_str()?,
@@ -264,12 +343,12 @@ impl Browser {
         let best = ranking.first().cloned();
         let tab = best
             .as_ref()
-            .and_then(|(id, _)| list.iter().find(|t| format!("t{}", t["tab_id"]) == *id));
+            .and_then(|(id, _)| list.iter().find(|t| id_onglet(t) == *id));
         Ok(json!({
             "best": tab,
             "confidence": best.map(|b| b.1),
             "alternatives": ranking.iter().skip(1).take(3).filter_map(|(id, p)| {
-                list.iter().find(|t| format!("t{}", t["tab_id"]) == *id).map(|t| json!({"tab": t, "score": p}))
+                list.iter().find(|t| id_onglet(t) == *id).map(|t| json!({"tab": t, "score": p}))
             }).collect::<Vec<_>>(),
             "engine": engine,
             "warning": warning,
@@ -317,9 +396,7 @@ impl Browser {
     async fn find_element(&self, args: &Value) -> Result<Value, String> {
         let goal = text_arg(args, "goal")?;
         let mut params = json!({ "max_elements": 300, "text_chars": 400 });
-        if let Some(t) = args.get("tab_id") {
-            params["tab_id"] = t.clone();
-        }
+        copier_cible(args, &mut params);
         let snap = self.snapshot(params).await?;
         let elements = snap["elements"].as_array().cloned().unwrap_or_default();
         let short_list = shortlist_elements(&goal, &elements, SHORTLIST);
@@ -428,9 +505,7 @@ impl Browser {
     async fn goal_reached(&self, args: &Value) -> Result<Value, String> {
         let goal = text_arg(args, "goal")?;
         let mut params = json!({ "max_elements": 20, "text_chars": 1500 });
-        if let Some(t) = args.get("tab_id") {
-            params["tab_id"] = t.clone();
-        }
+        copier_cible(args, &mut params);
         let snap = self.snapshot(params).await?;
         let state =
             json!({ "titre": snap["title"], "adresse": snap["url"], "texte": snap["text"] });
@@ -462,6 +537,42 @@ impl Browser {
 }
 
 // ── Utilitaires ─────────────────────────────────────────────────────────────
+
+/// L'onglet et le navigateur visés, recopiés d'un appel vers une commande.
+fn copier_cible(args: &Value, params: &mut Value) {
+    for cle in ["tab_id", "browser"] {
+        if let Some(v) = args.get(cle) {
+            params[cle] = v.clone();
+        }
+    }
+}
+
+/// L'identifiant d'un onglet pour Laya : deux navigateurs peuvent avoir le
+/// même numéro d'onglet.
+fn id_onglet(t: &Value) -> String {
+    format!("t{}{}", t["browser"].as_str().unwrap_or(""), t["tab_id"])
+}
+
+/// La version de l'extension livrée avec ce morph, telle que la personne la
+/// lit (`version_name` du manifeste : « 0.1.0-beta.17 »).
+fn version_livree() -> Option<String> {
+    dossier_extension("extension").and_then(|d| crate::liaison::nom_de_version_du_dossier(&d))
+}
+
+fn nom_affiche(nom: &str) -> String {
+    let mut c = nom.chars();
+    c.next()
+        .map(|p| p.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
+}
+
+fn liste_navigateurs(navigateurs: &[Value]) -> String {
+    navigateurs
+        .iter()
+        .filter_map(|n| n["browser"].as_str().map(nom_affiche))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 /// Les gestes qui restent à la personne, pour le navigateur ouvert.
 fn consigne(navigateur: &Navigateur, chemin: Option<&str>, copie: bool) -> String {
@@ -583,7 +694,7 @@ fn ref_props() -> Value {
 
 fn tab_tools() -> Vec<Value> {
     vec![
-        tool("browser_status", "État du pont avec le navigateur : extension connectée, onglets arrêtés par l'utilisateur.", json!({}), &[]),
+        tool("browser_status", "État du pont : navigateurs reliés (plusieurs possibles, chacun nommé : comet, opera, chrome…), version de leur extension, onglets arrêtés par l'utilisateur.", json!({}), &[]),
         tool("browser_link", "Relie le navigateur de la personne à Locaryn : ouvre une page de guide dans le navigateur choisi (chemin du dossier de l'extension copié), puis l'extension se relie seule pendant deux minutes, sans code. À appeler quand browser_status dit que l'extension n'est pas reliée.", json!({ "browser": { "type": "string", "enum": ["auto", "chrome", "edge", "opera", "brave", "vivaldi", "comet", "firefox"], "description": "Le navigateur de la personne ; omis : celui des réglages du morph, « auto » : celui du système." } }), &[]),
         tool("browser_list_tabs", "Liste tous les onglets ouverts, dans toutes les fenêtres (titre, adresse, actif, épinglé, son en cours). `query` filtre par titre ou adresse.", json!({ "query": str_prop("Filtre sur le titre ou l'adresse"), "window_id": { "type": "integer" } }), &[]),
         tool("browser_find_tab", "Retrouve, parmi les onglets déjà ouverts, celui qui correspond à une description (« le devis chez Leroy Merlin », « ma boîte mail »).", json!({ "description": str_prop("Ce que l'onglet contient ou montre") }), &["description"]),
@@ -626,14 +737,41 @@ fn judgement_tools() -> Vec<Value> {
 fn panel_tools() -> Vec<Value> {
     vec![
         tool("ui_panel_inbox", "Relève les consignes tapées dans la barre latérale de l'extension (réservé au panneau du morph).", json!({}), &[]),
-        tool("ui_panel_reply", "Renvoie une réponse à la barre latérale de l'extension (réservé au panneau du morph).", json!({ "text": str_prop("Réponse à afficher"), "id": str_prop("Identifiant de la consigne"), "error": { "type": "boolean" } }), &["text"]),
+        tool("ui_panel_reply", "Renvoie une réponse à la barre latérale de l'extension (réservé au panneau du morph).", json!({ "text": str_prop("Réponse à afficher"), "id": str_prop("Identifiant de la consigne"), "browser": str_prop("Le navigateur qui a posé la question"), "error": { "type": "boolean" } }), &["text"]),
+        tool("ui_panel_models", "Donne aux barres latérales la liste des modèles de la conversation (réservé au panneau du morph).", json!({ "active": str_prop("Le modèle actif"), "installed": { "type": "array", "items": { "type": "string" } } }), &[]),
+        tool("ui_browsers", "Liste les navigateurs reliés et la version de leur extension (réservé au panneau du morph).", json!({}), &[]),
     ]
+}
+
+/// Les outils qui agissent dans un navigateur : tous, sauf ceux qui en
+/// relient un, en donnent l'état ou jugent une phrase.
+fn vise_un_navigateur(nom: &str) -> bool {
+    nom.starts_with("browser_")
+        && !matches!(
+            nom,
+            "browser_status" | "browser_link" | "browser_assess_action"
+        )
+}
+
+fn browser_prop() -> Value {
+    json!({
+        "type": "string",
+        "description": "Le navigateur visé quand plusieurs sont reliés (comet, opera, chrome… : voir browser_status). Omis : celui des réglages, sinon le dernier relié ; browser_list_tabs sans navigateur liste les onglets de tous."
+    })
 }
 
 pub fn tools_list() -> Value {
     let mut all = tab_tools();
     all.extend(page_tools());
     all.extend(judgement_tools());
+    for t in &mut all {
+        let nom = t["name"].as_str().unwrap_or("").to_string();
+        if vise_un_navigateur(&nom) {
+            if let Some(props) = t["inputSchema"]["properties"].as_object_mut() {
+                props.insert("browser".into(), browser_prop());
+            }
+        }
+    }
     all.extend(panel_tools());
     json!({ "tools": all })
 }
@@ -658,6 +796,8 @@ mod tests {
             "browser_assess_action",
             "ui_panel_inbox",
             "ui_panel_reply",
+            "ui_panel_models",
+            "ui_browsers",
         ];
         for t in tools["tools"].as_array().unwrap() {
             let n = t["name"].as_str().unwrap();

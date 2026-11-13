@@ -1,19 +1,37 @@
 {
   "manifest_version": 3,
   "name": "Locaryn — contrôle du navigateur",
-  "version": "0.2.0",
+  "version": "0.1.0.17",
+  "version_name": "0.1.0-beta.17",
   "description": "Donnez vos consignes à Locaryn depuis la barre latérale ou le clic droit, et laissez-le piloter vos onglets. Un cadre animé signale chaque onglet contrôlé ; le bouton Stop reprend la main.",
-  "permissions": ["tabs", "scripting", "storage", "alarms", "history", "contextMenus"],
-  "host_permissions": ["<all_urls>"],
-  "background": { "scripts": ["background.js"] },
-  "action": { "default_title": "Ouvrir Locaryn" },
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "alarms",
+    "history",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "action": {
+    "default_title": "Ouvrir Locaryn"
+  },
   "sidebar_action": {
     "default_panel": "sidepanel.html",
     "default_title": "Locaryn",
     "default_icon": "icons/icon.png",
     "open_at_install": false
   },
-  "icons": { "128": "icons/icon.png" },
+  "icons": {
+    "128": "icons/icon.png"
+  },
   "browser_specific_settings": {
     "gecko": {
       "id": "browser@locaryn.dev",
