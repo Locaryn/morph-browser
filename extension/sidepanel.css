@@ -173,7 +173,58 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .meta { margin-top: 4px; font-size: 12px; color: var(--mut); text-align: right; }
 .meta.warn { color: var(--bad); }
 .msg.assistant .who { font-size: 12px; color: var(--mut); margin-bottom: 4px; }
-.msg.assistant .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.assistant .text { overflow-wrap: anywhere; }
+.msg.assistant .text.plain { white-space: pre-wrap; }
+
+/* Réflexion du modèle : repliée, discrète, comme dans le chat de l'app. */
+.reasoning { margin-bottom: 8px; color: var(--mut); font-size: 12px; }
+.reasoning summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.reasoning summary::-webkit-details-marker { display: none; }
+.reasoning summary::before { content: "›"; display: inline-block; transition: transform 120ms ease; }
+.reasoning[open] summary::before { transform: rotate(90deg); }
+.reasoning summary:hover { background: var(--surface); color: var(--fg); }
+.reasoning summary:active { transform: translateY(1px); }
+.reasoning-body {
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow: auto;
+}
+
+/* Markdown rendu. */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote { margin: 0 0 8px; }
+.md h3, .md h4, .md h5, .md h6 { margin: 12px 0 4px; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.md h3 { font-size: 15px; }
+.md ul, .md ol { padding-left: 20px; }
+.md li + li { margin-top: 2px; }
+.md code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface);
+  font: 12.5px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+.md pre { padding: 8px 12px; border-radius: 8px; background: var(--surface); overflow-x: auto; }
+.md pre code { padding: 0; background: none; white-space: pre; }
+.md blockquote { padding-left: 12px; border-left: 1px solid var(--line); color: var(--mut); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+.md a { color: var(--accent); text-underline-offset: 2px; }
+.md a:hover { text-decoration-thickness: 2px; }
 .msg.assistant.error .text { color: var(--bad); }
 .working { display: inline-flex; gap: 4px; padding: 4px 0; }
 .working span { width: 6px; height: 6px; border-radius: 50%; background: var(--mut); animation: pulse 1.2s infinite ease-in-out; }

@@ -176,8 +176,18 @@
     Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value);
   }
 
+  /** Un champ secret (mot de passe, code à usage unique) : la personne seule
+   *  le remplit, jamais le modèle. */
+  function isSecretField(el) {
+    const auto = String(el.getAttribute("autocomplete") || "").toLowerCase();
+    return el.type === "password" || /password|one-time-code/.test(auto);
+  }
+
   async function type(args) {
     const el = target(args);
+    if (isSecretField(el)) {
+      throw new Error("Champ de mot de passe ou de code : la personne le remplit elle-même, aucune saisie n'est faite.");
+    }
     await reach(el);
     el.focus({ preventScroll: true });
     const text = String(args.text ?? "");

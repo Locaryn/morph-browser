@@ -22,6 +22,8 @@ const view = {
   models: null,
   label: "",
   switching: false,
+  /** Réflexions dépliées par l'utilisateur (identifiants de message). */
+  openReasoning: new Set(),
 };
 
 /** La version lisible (« 0.1.0-beta.17 »), la même que celle du morph. */
@@ -79,10 +81,32 @@ function renderUser(m) {
   return box;
 }
 
+/** Réflexion repliée, comme dans le chat de l'app ; l'état ouvert survit au
+ *  redessin du fil (toutes les 3 s). */
+function renderReasoning(m, reasoning) {
+  const d = el("details", "reasoning");
+  d.open = view.openReasoning.has(m.id);
+  d.addEventListener("toggle", () => {
+    if (d.open) view.openReasoning.add(m.id);
+    else view.openReasoning.delete(m.id);
+  });
+  d.append(el("summary", "", "Réflexion"));
+  d.append(el("div", "reasoning-body", reasoning));
+  return d;
+}
+
 function renderAssistant(m) {
   const box = el("div", m.error ? "msg assistant error" : "msg assistant");
   box.append(el("div", "who", "Locaryn"));
-  box.append(el("div", "text", m.text));
+  if (m.error) {
+    box.append(el("div", "text plain", m.text));
+    return box;
+  }
+  const { reasoning, answer } = LocarynMarkdown.splitReasoning(m.text);
+  if (reasoning) box.append(renderReasoning(m, reasoning));
+  const body = el("div", "text md");
+  body.append(LocarynMarkdown.renderMarkdown(answer));
+  box.append(body);
   return box;
 }
 

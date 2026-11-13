@@ -61,6 +61,17 @@
   }
 
   /** Le message posté dans la conversation : la consigne, puis d'où elle vient. */
+  /** Le navigateur intégré de Locaryn n'a pas la session de la personne :
+   *  sans cette phrase, le modèle l'ouvrait (ou web_fetch) sur l'adresse de
+   *  l'onglet, tombait sur une page de connexion et ne remplissait rien. */
+  var CONSIGNE_OUTILS =
+    "Cet onglet est ouvert dans mon navigateur, avec ma session. Pour le lire ou agir dedans " +
+    "(remplir un champ, cocher, cliquer), utilise les outils de l'extension du navigateur " +
+    "(serveur mcp__morph-browser__browser, ceux qui prennent browser et tab_id) avec le browser " +
+    "et le tab_id ci-dessus : d'abord le snapshot de l'onglet, puis la saisie et les clics. " +
+    "Pas le navigateur intégré de Locaryn ni web_fetch : ils n'ont pas ma session. " +
+    "Ne saisis jamais de mot de passe et n'envoie pas le formulaire sans mon accord.";
+
   function composer(m) {
     var morceaux = [];
     var texte = (m.text || "").trim();
@@ -78,6 +89,11 @@
       if (page.tab_id !== undefined && page.tab_id !== null) origine += ", tab_id " + page.tab_id;
     }
     morceaux.push(origine + ".)");
+    // Sans cette phrase, le modèle prenait le navigateur intégré ou web_fetch,
+    // qui n'ont pas la session de la personne : un formulaire Google s'ouvrait
+    // sur la page de connexion et rien n'était rempli. « mon navigateur » fait
+    // aussi offrir par Locaryn les outils de l'extension, rangés sinon.
+    if (m.browser) morceaux.push(CONSIGNE_OUTILS);
     if (pj && pj.kind === "selection" && pj.text) {
       morceaux.push("Sélection :\n" + citer(String(pj.text).slice(0, MAX_SELECTION)));
     } else if (pj && pj.kind === "link") {
