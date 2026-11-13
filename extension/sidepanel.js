@@ -9,6 +9,8 @@ const MODELS_KEY = "panelModels";
 const LABEL_KEY = "browserLabel";
 /** Au-delà, une consigne non relevée laisse penser que Locaryn est fermé. */
 const UNDELIVERED_MS = 8000;
+/** Locaryn envoie sa liste de modèles quelques secondes après la liaison. */
+const MODELS_WAIT_MS = 10000;
 
 const $ = (id) => document.getElementById(id);
 const store = api.storage.session || api.storage.local;
@@ -22,6 +24,9 @@ const view = {
   models: null,
   label: "",
   switching: false,
+  /** Depuis quand la liaison tient : sans liste de modèles au bout de
+   *  quelques secondes, Locaryn est trop ancien pour la donner. */
+  connectedSince: 0,
   /** Réflexions dépliées par l'utilisateur (identifiants de message). */
   openReasoning: new Set(),
 };
@@ -162,6 +167,8 @@ function renderModels() {
   const tags = m && Array.isArray(m.installed) ? [...m.installed] : [];
   if (m && m.active && !tags.includes(m.active)) tags.unshift(m.active);
   row.hidden = !view.connected || tags.length === 0;
+  const attente = view.connected && view.connectedSince && Date.now() - view.connectedSince > MODELS_WAIT_MS;
+  $("model-hint").hidden = !(row.hidden && attente && !m);
   if (row.hidden) return;
   const actuels = [...select.options].map((o) => o.value).join("\n");
   if (actuels !== tags.join("\n")) {
@@ -209,6 +216,8 @@ async function refreshStatus() {
   try {
     const s = await api.runtime.sendMessage({ type: "popup_status" });
     view.connected = Boolean(s && s.connected);
+    if (!view.connected) view.connectedSince = 0;
+    else if (!view.connectedSince) view.connectedSince = Date.now();
     $("unblock").hidden = !(s && s.blocked && s.blocked.length);
   } catch (e) {
     console.warn("Locaryn : état de l'extension illisible", e);

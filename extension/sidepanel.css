@@ -122,6 +122,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 }
 .model select:hover { border-color: var(--mut); }
 .model select:disabled { opacity: 0.6; cursor: progress; }
+.model-hint { margin: 0 0 8px; color: var(--mut); font-size: 12px; line-height: 1.5; }
 
 /* ── Fil ── */
 .thread {
@@ -260,11 +261,14 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   transition: border-color 120ms;
 }
 .row:focus-within { border-color: var(--accent); }
+/* Même hauteur que le bouton d'envoi (44 px) : sur une ligne, le texte est
+   centré à côté de lui ; au-delà, le champ grandit vers le haut. */
 textarea {
   flex: 1;
-  min-height: 36px;
+  min-height: 44px;
   max-height: 160px;
-  padding: 8px 0;
+  padding: 11px 0;
+  line-height: 22px;
   border: 0;
   background: transparent;
   resize: none;
