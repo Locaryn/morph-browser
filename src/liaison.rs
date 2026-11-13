@@ -125,6 +125,11 @@ pub fn choisir_auto() -> Navigateur {
     choisir_parmi(defaut, &processus_ouverts())
 }
 
+/// Le navigateur par défaut du système, s'il est connu.
+pub fn navigateur_par_defaut() -> Option<Navigateur> {
+    programme_par_defaut().and_then(|p| Navigateur::depuis(&p))
+}
+
 /// L'ordre de préférence entre navigateurs ouverts. Edge vient en dernier :
 /// Windows le garde souvent lancé en arrière-plan, sans aucune fenêtre.
 const ORDRE_AUTO: &[&str] = &[
@@ -236,6 +241,31 @@ impl Navigateur {
         }
         cibles.extend(guide);
         cibles
+    }
+
+    /// Ce navigateur tourne-t-il ?
+    pub fn est_ouvert(self) -> bool {
+        processus_ouverts()
+            .iter()
+            .any(|p| p.trim_end_matches(".exe").eq_ignore_ascii_case(self.exe))
+    }
+
+    /// Lance ce navigateur sur sa page d'accueil.
+    pub fn demarrer(self) -> bool {
+        if cfg!(windows) {
+            if let Some(exe) = self.chemin_windows() {
+                return lancer(&mut Command::new(exe));
+            }
+            let mut c = Command::new("cmd");
+            c.args(["/C", "start", "", self.exe]);
+            return lancer(&mut c);
+        }
+        if cfg!(target_os = "macos") {
+            let mut c = Command::new("open");
+            c.args(["-a", self.app_mac]);
+            return lancer(&mut c);
+        }
+        lancer(&mut Command::new(self.exe))
     }
 
     /// Ouvre des adresses dans ce navigateur, en **un seul** lancement.

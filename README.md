@@ -55,7 +55,7 @@ L'extension porte la version du morph : morph `0.1.0-beta.17` → extension `0.1
 | --- | --- |
 | `browser_find_element` | Quel élément de la page sert cet objectif ? |
 | `browser_find_tab` | Lequel des onglets ouverts correspond à cette description ? |
-| garde-fou de `browser_click` / `browser_type` | Cette action est-elle irréversible (achat, suppression, envoi) ? |
+| garde-fou de `browser_click_element` / `browser_type_text` | Cette action est-elle irréversible (achat, suppression, envoi) ? |
 | `browser_goal_reached` | L'objectif est-il atteint d'après le texte de la page ? |
 
 Sans Laya, `find_element` et `find_tab` retombent sur un classement par mots et le signalent (`engine: lexical`) ; le garde-fou garde son repli lexical.

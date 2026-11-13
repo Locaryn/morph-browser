@@ -70,7 +70,7 @@ Fichier `%APPDATA%\Claude\claude_desktop_config.json` (macOS : `~/Library/Applic
 }
 ```
 
-Quittez complètement Claude Desktop, relancez-le. Préférez « autoriser une fois » à « toujours autoriser » pour `browser_click`, `browser_type` et `browser_evaluate`.
+Quittez complètement Claude Desktop, relancez-le. Préférez « autoriser une fois » à « toujours autoriser » pour `browser_click_element`, `browser_type_text` et `browser_evaluate`.
 
 ### Claude Code
 

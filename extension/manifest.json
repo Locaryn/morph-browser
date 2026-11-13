@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Locaryn — contrôle du navigateur",
-  "version": "0.1.0.18",
-  "version_name": "0.1.0-beta.18",
+  "version": "0.1.0.19",
+  "version_name": "0.1.0-beta.19",
   "description": "Donnez vos consignes à Locaryn depuis la barre latérale ou le clic droit, et laissez-le piloter vos onglets. Un cadre animé signale chaque onglet contrôlé ; le bouton Stop reprend la main.",
   "minimum_chrome_version": "116",
   "permissions": [

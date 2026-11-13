@@ -2,7 +2,7 @@
   "$schema": "https://locaryn.dev/schema/morph.json/v0.1",
   "apiVersion": "0.1",
   "name": "morph-browser",
-  "version": "0.1.0-beta.18",
+  "version": "0.1.0-beta.19",
   "description": "Pilote tout le navigateur, pas un seul onglet : retrouve les onglets déjà ouverts, lit, clique, saisit, navigue. Un cadre animé et une pastille signalent chaque onglet contrôlé, avec un bouton Stop. Les décisions rapides (quel élément, quel onglet, action risquée ?) passent par un petit modèle local installé par Locaryn.",
   "author": "Locaryn Team",
   "license": "Apache-2.0",
@@ -103,6 +103,14 @@
   "beta": true,
   "stability": "untested",
   "versions": [
+    {
+      "version": "0.1.0-beta.19",
+      "is_beta": true,
+      "summary": "Piloter le navigateur depuis le chat : browser_launch lance un navigateur précis (Opera, Comet…) et le garde pour la suite ; sans navigateur nommé, le dernier utilisé, sinon celui du système ; browser_click_element, browser_type_text et browser_scroll_page remplacent les noms que le navigateur intégré de Locaryn servait à leur place ; Relier relie l'extension de n'importe quel navigateur qui attend, pas seulement celui des réglages",
+      "tag": "v0.1.0-beta.19",
+      "released_at": "2026-11-13",
+      "install_source": "Locaryn/morph-browser#v0.1.0-beta.19"
+    },
     {
       "version": "0.1.0-beta.18",
       "is_beta": true,
