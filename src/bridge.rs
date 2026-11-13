@@ -36,7 +36,18 @@ pub struct Bridge {
     /// Fin de la fenêtre d'appairage ouverte par `browser_link` : jusque-là,
     /// une extension sans code reçoit le code au lieu d'être refusée.
     appairage: Mutex<Option<std::time::Instant>>,
+    /// Les consignes tapées dans la barre latérale, en attente d'être
+    /// relevées par le panneau du morph dans Locaryn.
+    panneau: Mutex<Vec<Value>>,
+    /// Les versions d'extension à qui l'on a déjà demandé de se recharger :
+    /// une seule demande par version, sinon une copie ancienne chargée
+    /// ailleurs que dans le dossier du morph se rechargerait en boucle.
+    rechargements: Mutex<Vec<String>>,
 }
+
+/// Au-delà, les plus anciennes consignes non relevées sont oubliées :
+/// Locaryn est fermé, personne ne les lira.
+const MAX_PANNEAU: usize = 20;
 
 /// Le refus envoyé à une extension qui n'a pas encore de code : elle
 /// réessaie en silence, le journal n'a pas à s'en remplir.
@@ -57,6 +68,8 @@ impl Bridge {
             blocked: Mutex::new(Vec::new()),
             bind_error: Mutex::new(None),
             appairage: Mutex::new(None),
+            panneau: Mutex::new(Vec::new()),
+            rechargements: Mutex::new(Vec::new()),
         });
         match TcpListener::bind(("127.0.0.1", port)).await {
             Ok(listener) => {
@@ -102,6 +115,74 @@ impl Bridge {
 
     pub async fn hello(&self) -> Option<Value> {
         self.hello.lock().await.clone()
+    }
+
+    /// Prend les consignes de la barre latérale, et dit à l'extension
+    /// qu'elles sont arrivées dans Locaryn.
+    pub async fn prendre_messages_panneau(&self) -> Vec<Value> {
+        let pris: Vec<Value> = std::mem::take(&mut *self.panneau.lock().await);
+        if !pris.is_empty() {
+            let ids: Vec<Value> = pris.iter().filter_map(|m| m.get("id").cloned()).collect();
+            if let Err(e) = self
+                .pousser(json!({ "type": "panel_ack", "ids": ids }))
+                .await
+            {
+                eprintln!("pont navigateur : accusé de réception non transmis : {e}");
+            }
+        }
+        pris
+    }
+
+    /// Envoie un message à l'extension sans attendre de réponse.
+    pub async fn pousser(&self, message: Value) -> Result<(), String> {
+        let tx = self.tx.lock().await;
+        let (_, sender) = tx
+            .as_ref()
+            .ok_or("L'extension Locaryn n'est pas connectée au navigateur.")?;
+        sender
+            .send(message.to_string())
+            .map_err(|_| "La connexion avec l'extension vient de tomber.".to_string())
+    }
+
+    /// Une extension plus ancienne que celle du dossier du morph : on lui
+    /// demande de se recharger, ce qui relit ce dossier. Une extension non
+    /// empaquetée ne le fait jamais d'elle-même — la personne gardait l'ancien
+    /// code après chaque mise à jour du morph.
+    async fn recharger_si_perimee(&self, hello: &Value) {
+        let Some(version) = hello.get("version").and_then(Value::as_str) else {
+            return;
+        };
+        let firefox = hello
+            .get("browser")
+            .and_then(Value::as_str)
+            .is_some_and(|b| b.contains("Firefox/"));
+        let dossier = if firefox {
+            "extension-firefox"
+        } else {
+            "extension"
+        };
+        let Some(livree) = crate::liaison::dossier_extension(dossier)
+            .and_then(|d| crate::liaison::version_du_dossier(&d))
+        else {
+            return;
+        };
+        if !crate::liaison::plus_recente(&livree, version) {
+            return;
+        }
+        {
+            let mut deja = self.rechargements.lock().await;
+            if deja.iter().any(|v| v == version) {
+                return;
+            }
+            deja.push(version.to_string());
+        }
+        eprintln!("pont navigateur : extension {version} rechargée vers {livree}");
+        if let Err(e) = self
+            .pousser(json!({ "type": "reload", "version": livree }))
+            .await
+        {
+            eprintln!("pont navigateur : rechargement non demandé : {e}");
+        }
     }
 
     /// Onglets sur lesquels l'utilisateur a pressé Stop.
@@ -219,6 +300,7 @@ impl Bridge {
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         let conn = self.next_conn.fetch_add(1, Ordering::Relaxed);
         *self.tx.lock().await = Some((conn, tx));
+        self.recharger_si_perimee(&hello).await;
         *self.hello.lock().await = Some(hello);
 
         let ecrivain = tokio::spawn(async move {
@@ -256,6 +338,12 @@ impl Bridge {
                 if let Some(id) = v.get("tab_id").and_then(Value::as_u64) {
                     self.blocked.lock().await.push(id);
                 }
+            }
+            if v.get("event") == Some(&json!("panel_message")) {
+                let mut file = self.panneau.lock().await;
+                file.push(v.get("message").cloned().unwrap_or(Value::Null));
+                let trop = file.len().saturating_sub(MAX_PANNEAU);
+                file.drain(..trop);
             }
             return;
         }

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Locaryn</title>
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="top">
+    <img class="logo" src="icons/icon.png" alt="" width="20" height="20">
+    <span class="name">Locaryn</span>
+    <span class="state" id="state" role="status"><span class="dot" id="dot"></span><span id="state-text">…</span></span>
+    <button class="icon" id="clear" type="button" title="Effacer la conversation" aria-label="Effacer la conversation">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 6V4h4v2m-6 0 1 10h6l1-10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="icon" id="settings-toggle" type="button" title="Réglages" aria-label="Réglages" aria-expanded="false" aria-controls="settings">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.5" cy="10" r="1.4" fill="currentColor"/><circle cx="10" cy="10" r="1.4" fill="currentColor"/><circle cx="15.5" cy="10" r="1.4" fill="currentColor"/></svg>
+    </button>
+  </header>
+
+  <section class="settings" id="settings" hidden>
+    <p class="hint">D'habitude rien à remplir : dans Locaryn, le morph navigateur › « Relier au navigateur » relie l'extension seul.</p>
+    <label for="token">Code d'appairage</label>
+    <input id="token" type="text" autocomplete="off" spellcheck="false">
+    <label for="port">Port local</label>
+    <input id="port" type="number" min="1024" max="65535">
+    <button class="wide primary" id="save" type="button">Enregistrer et connecter</button>
+    <button class="wide" id="unblock" type="button" hidden>Réautoriser les onglets arrêtés</button>
+    <p class="hint" id="version"></p>
+  </section>
+
+  <main class="thread" id="thread" aria-live="polite">
+    <div class="empty" id="empty">
+      <p class="lead">Donnez une consigne : Locaryn agit dans vos onglets.</p>
+      <p class="hint">Sélectionnez du texte puis clic droit › « Demander à Locaryn » pour le joindre.</p>
+      <div class="ideas">
+        <button type="button" class="idea">Résume cette page</button>
+        <button type="button" class="idea">Range mes onglets par sujet</button>
+        <button type="button" class="idea">Retrouve l'onglet de ma boîte mail</button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="composer">
+    <div class="attachment" id="attachment" hidden>
+      <div class="att-body">
+        <span class="att-kind" id="att-kind"></span>
+        <span class="att-text" id="att-text"></span>
+      </div>
+      <button class="icon" id="att-remove" type="button" title="Retirer" aria-label="Retirer la pièce jointe">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <p class="error" id="error" role="alert" hidden></p>
+    <form class="row" id="form">
+      <label class="sr" for="input">Votre consigne</label>
+      <textarea id="input" rows="1" placeholder="Que doit faire Locaryn ?"></textarea>
+      <button class="send" id="send" type="submit" title="Envoyer (Entrée)" aria-label="Envoyer">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15V5m0 0-4.5 4.5M10 5l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </form>
+  </footer>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 //! navigateur où l'on charge une extension. Le chargement reste un geste de la
 //! personne : hors de leur boutique, aucun navigateur ne permet de l'imposer.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -114,11 +114,71 @@ const CONNUS: &[(&str, Navigateur)] = &[
     ),
 ];
 
-/// Le navigateur par défaut du système, s'il est connu ; sinon Chrome.
-pub fn par_defaut() -> Navigateur {
-    programme_par_defaut()
-        .and_then(|p| Navigateur::depuis(&p))
+/// Le navigateur à viser en « auto ».
+///
+/// Le navigateur par défaut du système n'est pas forcément celui où la
+/// personne travaille (Opera par défaut, Chrome ouvert) : d'abord le
+/// navigateur par défaut s'il est ouvert, puis un navigateur ouvert, ensuite
+/// le navigateur par défaut, et Chrome à défaut de tout.
+pub fn choisir_auto() -> Navigateur {
+    let defaut = programme_par_defaut().and_then(|p| Navigateur::depuis(&p));
+    choisir_parmi(defaut, &processus_ouverts())
+}
+
+/// L'ordre de préférence entre navigateurs ouverts. Edge vient en dernier :
+/// Windows le garde souvent lancé en arrière-plan, sans aucune fenêtre.
+const ORDRE_AUTO: &[&str] = &[
+    "chrome", "comet", "brave", "vivaldi", "opera", "firefox", "edge",
+];
+
+fn choisir_parmi(defaut: Option<Navigateur>, ouverts: &[String]) -> Navigateur {
+    let est_ouvert = |n: &Navigateur| {
+        ouverts
+            .iter()
+            .any(|p| p.trim_end_matches(".exe").eq_ignore_ascii_case(n.exe))
+    };
+    if let Some(d) = defaut.filter(est_ouvert) {
+        return d;
+    }
+    ORDRE_AUTO
+        .iter()
+        .filter_map(|nom| Navigateur::depuis(nom))
+        .find(est_ouvert)
+        .or(defaut)
         .unwrap_or(CONNUS[0].1)
+}
+
+/// Les noms des programmes en cours (`chrome.exe`, `opera`…).
+fn processus_ouverts() -> Vec<String> {
+    let mut c = if cfg!(windows) {
+        let mut c = Command::new("tasklist");
+        c.args(["/FO", "CSV", "/NH"]);
+        c
+    } else if cfg!(target_os = "linux") {
+        let mut c = Command::new("ps");
+        c.args(["-eo", "comm="]);
+        c
+    } else {
+        return Vec::new();
+    };
+    sans_console(&mut c);
+    match c.output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            // tasklist : `"chrome.exe","1234",…` ; ps : le nom seul.
+            .filter_map(|l| l.trim().trim_start_matches('"').split('"').next())
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty())
+            .collect(),
+        Ok(o) => {
+            eprintln!("liste des programmes : sortie {}", o.status);
+            Vec::new()
+        }
+        Err(e) => {
+            eprintln!("liste des programmes : {e}");
+            Vec::new()
+        }
+    }
 }
 
 /// L'identifiant du navigateur par défaut, tel que le système le nomme
@@ -163,29 +223,46 @@ impl Navigateur {
             .map(|(_, n)| *n)
     }
 
-    /// Ouvre la page des extensions. `false` : le navigateur est introuvable
-    /// ou a refusé ; la personne tape l'adresse elle-même.
-    pub fn ouvrir_page_extensions(self) -> bool {
-        self.ouvrir(self.page)
+    /// Les adresses à ouvrir pour relier ce navigateur, en un seul lancement.
+    ///
+    /// Les navigateurs Chromium ignorent leurs pages internes passées par un
+    /// autre programme : seule la page de guide leur est donnée. Firefox ouvre
+    /// sa page de débogage, et la page de guide à côté.
+    pub fn cibles_liaison(self, guide: Option<&Path>) -> Vec<String> {
+        let guide = guide.map(adresse_fichier);
+        let mut cibles = Vec::new();
+        if self.nom == "firefox" || guide.is_none() {
+            cibles.push(self.page.to_string());
+        }
+        cibles.extend(guide);
+        cibles
     }
 
-    /// Ouvre une adresse ou un fichier local dans ce navigateur.
-    pub fn ouvrir(self, cible: &str) -> bool {
+    /// Ouvre des adresses dans ce navigateur, en **un seul** lancement.
+    ///
+    /// Deux lancements coup sur coup ouvraient une seconde fenêtre quand le
+    /// navigateur était fermé : le second arrivait avant que la première
+    /// instance soit prête à le recevoir. Ouvert, le navigateur reçoit les
+    /// adresses en onglets dans sa fenêtre active ; fermé, il démarre dessus.
+    pub fn ouvrir(self, cibles: &[String]) -> bool {
+        if cibles.is_empty() {
+            return false;
+        }
         if cfg!(windows) {
             if let Some(exe) = self.chemin_windows() {
-                return lancer(Command::new(exe).arg(cible));
+                return lancer(Command::new(exe).args(cibles));
             }
             // Repli : l'exécutable déclaré à Windows (App Paths).
             let mut c = Command::new("cmd");
-            c.args(["/C", "start", "", self.exe, cible]);
+            c.args(["/C", "start", "", self.exe]).args(cibles);
             return lancer(&mut c);
         }
         if cfg!(target_os = "macos") {
             let mut c = Command::new("open");
-            c.args(["-a", self.app_mac, cible]);
+            c.args(["-a", self.app_mac]).args(cibles);
             return lancer(&mut c);
         }
-        lancer(Command::new(self.exe).arg(cible))
+        lancer(Command::new(self.exe).args(cibles))
     }
 
     fn chemin_windows(self) -> Option<PathBuf> {
@@ -198,6 +275,49 @@ impl Navigateur {
             .flat_map(|r| self.chemins_windows.iter().map(move |c| r.join(c)))
             .find(|p| p.is_file())
     }
+}
+
+/// `file:///C:/…/page.html` : une adresse que tous les navigateurs ouvrent,
+/// là où un chemin Windows brut peut être pris pour une recherche.
+fn adresse_fichier(chemin: &Path) -> String {
+    let brut = chemin.display().to_string().replace('\\', "/");
+    let encode = brut
+        .replace('%', "%25")
+        .replace(' ', "%20")
+        .replace('#', "%23");
+    if encode.starts_with('/') {
+        format!("file://{encode}")
+    } else {
+        format!("file:///{encode}")
+    }
+}
+
+/// La version déclarée par le manifeste d'un dossier d'extension.
+pub fn version_du_dossier(dossier: &Path) -> Option<String> {
+    let texte = std::fs::read_to_string(dossier.join("manifest.json")).ok()?;
+    let manifeste: serde_json::Value = serde_json::from_str(&texte).ok()?;
+    manifeste
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
+/// `true` si `a` est strictement plus récente que `b` (`0.2.0` > `0.1.3`).
+pub fn plus_recente(a: &str, b: &str) -> bool {
+    let nombres = |v: &str| -> Vec<u64> {
+        v.split('.')
+            .map(|p| p.trim().parse::<u64>().unwrap_or(0))
+            .collect()
+    };
+    let (pa, pb) = (nombres(a), nombres(b));
+    for i in 0..pa.len().max(pb.len()) {
+        let x = pa.get(i).copied().unwrap_or(0);
+        let y = pb.get(i).copied().unwrap_or(0);
+        if x != y {
+            return x > y;
+        }
+    }
+    false
 }
 
 /// Le dossier de l'extension livré avec le morph (`extension`, ou
@@ -303,6 +423,44 @@ mod tests {
         );
         assert!(Navigateur::depuis("").is_none());
         assert!(Navigateur::depuis("auto").is_none());
+    }
+
+    #[test]
+    fn un_navigateur_ouvert_passe_avant_le_navigateur_par_defaut_ferme() {
+        let opera = Navigateur::depuis("opera");
+        let ouverts = ["explorer.exe".to_string(), "chrome.exe".to_string()];
+        assert_eq!(choisir_parmi(opera, &ouverts).nom, "chrome");
+        let ouverts = ["opera.exe".to_string(), "chrome.exe".to_string()];
+        assert_eq!(choisir_parmi(opera, &ouverts).nom, "opera");
+        assert_eq!(choisir_parmi(opera, &[]).nom, "opera");
+        assert_eq!(choisir_parmi(None, &[]).nom, "chrome");
+        // Edge tourne souvent en arrière-plan : il passe après les autres.
+        let ouverts = ["msedge.exe".to_string(), "comet.exe".to_string()];
+        assert_eq!(choisir_parmi(None, &ouverts).nom, "comet");
+    }
+
+    #[test]
+    fn la_liaison_ne_lance_le_navigateur_qu_une_fois() {
+        let guide = Path::new(r"C:\Users\A B\Temp\guide.html");
+        let chrome = Navigateur::depuis("chrome").unwrap();
+        assert_eq!(
+            chrome.cibles_liaison(Some(guide)),
+            vec!["file:///C:/Users/A%20B/Temp/guide.html".to_string()]
+        );
+        let firefox = Navigateur::depuis("firefox").unwrap();
+        assert_eq!(firefox.cibles_liaison(Some(guide)).len(), 2);
+        assert_eq!(
+            chrome.cibles_liaison(None),
+            vec!["chrome://extensions".to_string()]
+        );
+    }
+
+    #[test]
+    fn les_versions_se_comparent_par_nombres() {
+        assert!(plus_recente("0.2.0", "0.1.3"));
+        assert!(plus_recente("0.1.10", "0.1.9"));
+        assert!(!plus_recente("0.1.3", "0.1.3"));
+        assert!(!plus_recente("0.1.3", "0.2"));
     }
 
     #[test]

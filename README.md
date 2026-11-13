@@ -22,6 +22,8 @@ Télécharge la dernière release, vérifie son empreinte SHA-256, l'installe sa
 - **Un curseur** se déplace dans la page et émet une onde à chaque clic (gauche ou droit).
 - **Stop** coupe le contrôle de l'onglet immédiatement ; l'onglet reste bloqué jusqu'à ce que l'utilisateur le réautorise depuis l'icône de l'extension.
 - Le cadre reste affiché pendant toute la tâche ; `browser_release` le retire, et un filet de sécurité l'efface après 3 min sans commande.
+- **Barre latérale** (clic sur l'icône de l'extension) : un chat pour donner une consigne à Locaryn sans quitter la page. La consigne part dans la conversation ouverte de Locaryn (l'application doit être ouverte), avec l'onglet d'où elle vient ; la réponse revient dans la barre. Les réglages (code, port, onglets arrêtés) sont derrière `⋯`.
+- **Clic droit › « Demander à Locaryn »** : ouvre la barre latérale et joint la sélection (ou le lien, l'image, la page).
 
 ## Installation
 
@@ -29,9 +31,17 @@ Télécharge la dernière release, vérifie son empreinte SHA-256, l'installe sa
 2. Dans le navigateur :
    - **Chrome, Edge, Brave, Arc, Vivaldi, Opera, Comet** : `chrome://extensions` (ou `edge://extensions`…) → mode développeur → **Charger l'extension non empaquetée** → dossier `extension/` du morph.
    - **Firefox** : `about:debugging#/runtime/this-firefox` → **Charger un module complémentaire temporaire** → fichier `extension-firefox/manifest.json`. Puis, dans `about:addons` → l'extension → Autorisations, accordez l'accès à **tous les sites** : Firefox ne l'accorde pas à l'installation, et sans lui l'extension ne peut lire aucune page. Un module temporaire disparaît à la fermeture de Firefox ; un module permanent exige une extension signée (publication sur addons.mozilla.org, pas encore faite).
-3. Relier : dans Locaryn, Réglages de l'extension → **Relier au navigateur** (ou demandez « relie mon navigateur » dans le chat). Le navigateur choisi — « auto » : celui de l'ordinateur — ouvre une page de guide qui donne l'adresse de sa page des extensions et le chemin du dossier, chacun avec un bouton Copier ; le chemin du dossier est déjà dans le presse-papiers. Une mise à jour du morph remplace le dossier : le bouton « Mettre à jour » de la page des extensions recharge alors la nouvelle version. Les navigateurs Chromium refusent qu'un autre programme ouvre leurs pages internes : d'où l'adresse à coller. Une fois l'extension chargée, elle se relie seule dans les deux minutes, sans code à recopier. Le code d'appairage reste dans `pairing-token` (`%APPDATA%\locaryn\morph-browser\` sous Windows) pour un appairage à la main depuis l'icône de l'extension.
+3. Relier : dans Locaryn, Réglages de l'extension → **Relier au navigateur** (ou demandez « relie mon navigateur » dans le chat). Le navigateur choisi — « auto » : un navigateur déjà ouvert, sinon celui de l'ordinateur — ouvre un onglet de guide (dans la fenêtre déjà ouverte, sans nouvelle fenêtre) qui donne l'adresse de sa page des extensions et le chemin du dossier, chacun avec un bouton Copier ; le chemin du dossier est déjà dans le presse-papiers. Les navigateurs Chromium refusent qu'un autre programme ouvre leurs pages internes : d'où l'adresse à coller. Une fois l'extension chargée, elle se relie seule dans les deux minutes, sans code à recopier. Le code d'appairage reste dans `pairing-token` (`%APPDATA%\locaryn\morph-browser\` sous Windows) pour un appairage à la main depuis l'icône de l'extension.
 
 Le pont refuse toute origine qui n'est pas une extension de navigateur et tout client sans le code d'appairage.
+
+### Mettre à jour l'extension
+
+L'extension est chargée « non empaquetée » depuis le dossier `extension/` du morph : une mise à jour du morph remplace ce dossier, mais le navigateur garde l'ancien code tant qu'il ne l'a pas relu.
+
+- **Depuis l'extension 0.2.0** : rien à faire. À la connexion, le serveur compare la version de l'extension à celle du dossier et lui demande de se recharger (une fois par version).
+- **Extension 0.1.x (une seule fois)** : ouvrez `chrome://extensions` (Comet : la même adresse), repérez « Locaryn — contrôle du navigateur » et cliquez sur la flèche circulaire **Recharger**. Si l'extension avait été chargée depuis un autre dossier, retirez-la et rechargez le dossier `extension/` du morph installé (`~/.lochor/plugins/morph-browser/extension`).
+- **Firefox** : un module temporaire se recharge depuis `about:debugging` → **Recharger**.
 
 ## Laya
 

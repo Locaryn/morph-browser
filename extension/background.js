@@ -104,6 +104,20 @@ async function onServerMessage(ws, raw) {
     }
     return;
   }
+  if (msg.type === "reload") {
+    // Le morph apporte une version plus récente : relire son dossier.
+    console.info("Locaryn : rechargement vers", msg.version);
+    api.runtime.reload();
+    return;
+  }
+  if (msg.type === "panel_ack") {
+    await panelMarkDelivered(Array.isArray(msg.ids) ? msg.ids : []);
+    return;
+  }
+  if (msg.type === "panel_reply") {
+    await panelAddReply(msg);
+    return;
+  }
   if (msg.id === undefined || !msg.method) return;
   try {
     const result = await dispatch(msg.method, msg.params || {});
@@ -125,7 +139,10 @@ setInterval(() => {
   if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ type: "ping" }));
 }, KEEPALIVE_MS);
 
-api.storage.onChanged.addListener(async () => {
+api.storage.onChanged.addListener(async (changes, area) => {
+  // Seuls le code et le port touchent la connexion ; la conversation de la
+  // barre latérale vit dans `session` et ne doit pas la couper.
+  if (area !== "local" || !("token" in changes || "port" in changes)) return;
   await loadConfig();
   if (state.ws) state.ws.close();
   connect();
@@ -423,9 +440,197 @@ async function dispatch(method, params) {
   return fn(params);
 }
 
+// ── Barre latérale : la conversation avec Locaryn ───────────────────────────
+//
+// La conversation vit dans `storage.session` : la barre latérale la relit en
+// s'ouvrant, et le service worker peut s'endormir sans la perdre. Une consigne
+// part au serveur MCP du morph par le pont ; Locaryn la relève, la poste dans
+// la conversation ouverte, et renvoie la réponse par le même chemin.
+
+const PANEL_KEY = "panel";
+const DRAFT_KEY = "panelDraft";
+const PANEL_MAX = 60;
+
+function sessionStore() {
+  return api.storage.session || api.storage.local;
+}
+
+async function panelLoad() {
+  const r = await sessionStore().get(PANEL_KEY);
+  const p = r[PANEL_KEY];
+  return p && Array.isArray(p.messages) ? p : { messages: [] };
+}
+
+async function panelSave(p) {
+  p.messages = p.messages.slice(-PANEL_MAX);
+  await sessionStore().set({ [PANEL_KEY]: p });
+}
+
+function newId() {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+/** L'onglet que la personne regarde, pour donner le contexte de la consigne. */
+async function activePage() {
+  try {
+    const [t] = await api.tabs.query({ active: true, lastFocusedWindow: true });
+    return t ? { tab_id: t.id, url: t.url || "", title: t.title || "" } : null;
+  } catch (e) {
+    console.warn("Locaryn : onglet actif illisible", e);
+    return null;
+  }
+}
+
+async function panelSend(text, attachment) {
+  const clean = String(text || "").trim();
+  if (!clean && !attachment) throw new Error("Message vide.");
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN || !state.connected) {
+    throw new Error("Locaryn n'est pas relié : ouvrez Locaryn, puis le morph navigateur › Relier au navigateur.");
+  }
+  const message = {
+    id: newId(),
+    text: clean,
+    attachment: attachment || null,
+    page: (attachment && attachment.page) || (await activePage()),
+    at: Date.now(),
+  };
+  const p = await panelLoad();
+  p.messages.push({ ...message, role: "user", status: "sent" });
+  await panelSave(p);
+  await sessionStore().remove(DRAFT_KEY);
+  notifyServer({ event: "panel_message", message });
+  return { id: message.id };
+}
+
+async function panelMarkDelivered(ids) {
+  const p = await panelLoad();
+  let changed = false;
+  for (const m of p.messages) {
+    if (m.role === "user" && ids.includes(m.id) && m.status === "sent") {
+      m.status = "delivered";
+      changed = true;
+    }
+  }
+  if (changed) await panelSave(p);
+}
+
+async function panelAddReply(msg) {
+  const p = await panelLoad();
+  for (const m of p.messages) {
+    if (m.role === "user" && m.id === msg.id) m.status = "answered";
+  }
+  p.messages.push({
+    id: newId(),
+    role: "assistant",
+    text: String(msg.text || ""),
+    error: Boolean(msg.error),
+    at: Date.now(),
+  });
+  await panelSave(p);
+}
+
+/** Ouvre la barre latérale. À appeler dans le geste de la personne, avant
+ *  toute attente : Chrome refuse sinon (« may only be called in response to a
+ *  user gesture »). */
+function openPanel(tab) {
+  if (api.sidePanel && api.sidePanel.open && tab) {
+    return api.sidePanel.open({ windowId: tab.windowId });
+  }
+  if (api.sidebarAction && api.sidebarAction.open) return api.sidebarAction.open();
+  return Promise.reject(new Error("Pas de barre latérale dans ce navigateur."));
+}
+
+// L'icône ouvre la barre latérale (Chromium). Firefox : clic sur l'icône.
+if (api.sidePanel && api.sidePanel.setPanelBehavior) {
+  api.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((e) => console.warn("Locaryn : comportement de l'icône", e));
+} else if (api.sidebarAction) {
+  api.action.onClicked.addListener(() => {
+    api.sidebarAction.toggle().catch((e) => console.warn("Locaryn : barre latérale", e));
+  });
+}
+
+// ── Clic droit : « Demander à Locaryn » ─────────────────────────────────────
+
+const MENU_ID = "locaryn-ask";
+
+function createMenu() {
+  if (!api.contextMenus) return;
+  api.contextMenus.removeAll(() => {
+    api.contextMenus.create(
+      {
+        id: MENU_ID,
+        title: "Demander à Locaryn",
+        contexts: ["selection", "page", "link", "image"],
+      },
+      () => {
+        if (api.runtime.lastError) console.warn("Locaryn : menu", api.runtime.lastError.message);
+      },
+    );
+  });
+}
+
+api.runtime.onInstalled.addListener(createMenu);
+if (api.runtime.onStartup) api.runtime.onStartup.addListener(createMenu);
+
+/** La sélection avec ses retours à la ligne : `selectionText` les écrase. */
+async function fullSelection(tab, fallback) {
+  try {
+    const [r] = await api.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: false },
+      func: () => String(window.getSelection ? window.getSelection() : ""),
+    });
+    const text = r && typeof r.result === "string" ? r.result.trim() : "";
+    return text || fallback;
+  } catch (e) {
+    console.debug("Locaryn : sélection lue par le menu seulement", e.message);
+    return fallback;
+  }
+}
+
+function onMenuClick(info, tab) {
+  if (info.menuItemId !== MENU_ID) return;
+  // D'abord ouvrir : le geste de la personne ne survit pas à une attente.
+  openPanel(tab).catch((e) => console.warn("Locaryn : barre latérale", e));
+  const page = tab ? { tab_id: tab.id, url: tab.url || "", title: tab.title || "" } : null;
+  (async () => {
+    let attachment;
+    if (info.selectionText) {
+      const text = tab ? await fullSelection(tab, info.selectionText) : info.selectionText;
+      attachment = { kind: "selection", text: text.slice(0, 20000), page };
+    } else if (info.linkUrl) {
+      attachment = { kind: "link", url: info.linkUrl, text: info.linkText || "", page };
+    } else if (info.srcUrl && info.mediaType === "image") {
+      attachment = { kind: "image", url: info.srcUrl, page };
+    } else {
+      attachment = { kind: "page", page };
+    }
+    await sessionStore().set({ [DRAFT_KEY]: attachment });
+  })().catch((e) => console.warn("Locaryn : pièce jointe du clic droit", e));
+}
+
+// Sans la permission (manifeste encore ancien, pas rechargé), pas de menu :
+// le reste du service worker doit tourner quand même.
+if (api.contextMenus) api.contextMenus.onClicked.addListener(onMenuClick);
+
 // ── Messages venant des pages et de la fenêtre de l'extension ───────────────
 
+/** Une réponse asynchrone à `runtime.onMessage`, erreurs comprises. */
+function answerAsync(promise, reply) {
+  promise
+    .then((r) => reply(r))
+    .catch((e) => reply({ error: String(e && e.message ? e.message : e) }));
+  return true;
+}
+
 api.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg.type === "panel_send") return answerAsync(panelSend(msg.text, msg.attachment), reply);
+  if (msg.type === "panel_clear") {
+    return answerAsync(panelSave({ messages: [] }).then(() => ({ ok: true })), reply);
+  }
   if (msg.type === "user_stop" && sender.tab) {
     const id = sender.tab.id;
     state.blocked.add(id);

@@ -7,7 +7,7 @@
 
 use crate::bridge::{load_or_create_token, Bridge};
 use crate::config::BrowserConfig;
-use crate::liaison::{copier, dossier_extension, par_defaut, Navigateur, DUREE_APPAIRAGE};
+use crate::liaison::{choisir_auto, copier, dossier_extension, Navigateur, DUREE_APPAIRAGE};
 use base64::Engine;
 use locaryn_morph_kit::laya::{read_config, Candidate, Laya};
 use locaryn_morph_kit::mcp::{str_prop, tool};
@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 /// Nombre d'éléments soumis à Laya après présélection lexicale.
@@ -39,7 +40,13 @@ pub struct Browser {
     cfg: BrowserConfig,
     memo: Mutex<HashMap<u64, PageMemo>>,
     last_tab: Mutex<Option<u64>>,
+    /// Le dernier lancement du navigateur par `browser_link` : un second appel
+    /// rapproché (le bouton, puis le modèle) n'ouvre pas un onglet de plus.
+    derniere_liaison: Mutex<Option<Instant>>,
 }
+
+/// Le délai pendant lequel `browser_link` ne relance pas le navigateur.
+const LIAISON_RECENTE: Duration = Duration::from_secs(20);
 
 impl Browser {
     pub async fn new() -> Result<Self, String> {
@@ -52,6 +59,7 @@ impl Browser {
             cfg,
             memo: Mutex::new(HashMap::new()),
             last_tab: Mutex::new(None),
+            derniere_liaison: Mutex::new(None),
         })
     }
 
@@ -60,6 +68,8 @@ impl Browser {
         match name {
             "browser_status" => self.status().await,
             "browser_link" => self.link(&args).await,
+            "ui_panel_inbox" => self.panel_inbox().await,
+            "ui_panel_reply" => self.panel_reply(&args).await,
             "browser_find_tab" => self.find_tab(&args).await,
             "browser_snapshot" => self.snapshot(args).await,
             "browser_find_element" => self.find_element(&args).await,
@@ -81,6 +91,7 @@ impl Browser {
     fn warm_up(&self, tool: &str) {
         if tool == "browser_status"
             || tool == "browser_link"
+            || tool.starts_with("ui_")
             || self.warmed.swap(true, Ordering::Relaxed)
         {
             return;
@@ -100,6 +111,7 @@ impl Browser {
         let mut out = json!({
             "extension_connected": connected,
             "browser": self.bridge.hello().await.and_then(|h| h.get("browser").cloned()),
+            "extension_version": self.bridge.hello().await.and_then(|h| h.get("version").cloned()),
             "port": self.bridge.port,
             // Le modèle de décision local reste un détail interne : le
             // modèle de conversation n'a pas à le nommer à l'utilisateur.
@@ -143,29 +155,58 @@ impl Browser {
             }));
         }
         self.bridge.ouvrir_appairage(DUREE_APPAIRAGE).await;
-        // « auto » ou rien : le navigateur par défaut du système.
-        let navigateur = Navigateur::depuis(&choisi).unwrap_or_else(par_defaut);
+        // « auto » ou rien : un navigateur ouvert, sinon celui du système.
+        let navigateur = Navigateur::depuis(&choisi).unwrap_or_else(choisir_auto);
         let dossier = dossier_extension(navigateur.dossier);
         let chemin = dossier.as_ref().map(|d| d.display().to_string());
         let chemin_copie = chemin.as_deref().is_some_and(copier);
-        // Firefox ouvre sa page interne ; les navigateurs Chromium l'ignorent
-        // en silence. La page de guide, elle, s'ouvre partout et passe devant.
-        let page_ouverte = navigateur.ouvrir_page_extensions();
         let guide = crate::guide::ecrire(&navigateur, chemin.as_deref());
-        let guide_ouvert = guide
-            .as_ref()
-            .is_some_and(|g| navigateur.ouvrir(&g.display().to_string()));
+        // Un seul lancement du navigateur, et pas deux en vingt secondes.
+        let deja_ouvert = {
+            let mut derniere = self.derniere_liaison.lock().await;
+            let recente = derniere.is_some_and(|t| t.elapsed() < LIAISON_RECENTE);
+            if !recente {
+                *derniere = Some(Instant::now());
+            }
+            recente
+        };
+        let guide_ouvert =
+            deja_ouvert || navigateur.ouvrir(&navigateur.cibles_liaison(guide.as_deref()));
         Ok(json!({
             "guide_page": guide.as_ref().map(|g| g.display().to_string()),
             "guide_page_opened": guide_ouvert,
+            "guide_page_already_open": deja_ouvert,
             "browser": navigateur.nom,
             "pairing_window_seconds": DUREE_APPAIRAGE.as_secs(),
             "extension_folder": chemin,
             "folder_path_copied": chemin_copie,
             "extensions_page": navigateur.page,
-            "extensions_page_opened": page_ouverte,
             "message": consigne(&navigateur, chemin.as_deref(), chemin_copie),
         }))
+    }
+
+    // ── Barre latérale de l'extension ───────────────────────────────────────
+    //
+    // Réservés au panneau du morph dans Locaryn (préfixe `ui_` : le modèle ne
+    // les voit pas). Le panneau relève les consignes tapées dans la barre
+    // latérale, les poste dans la conversation, et renvoie la réponse.
+
+    async fn panel_inbox(&self) -> Result<Value, String> {
+        let messages = self.bridge.prendre_messages_panneau().await;
+        Ok(json!({
+            "extension_connected": self.bridge.is_connected().await,
+            "messages": messages,
+        }))
+    }
+
+    async fn panel_reply(&self, args: &Value) -> Result<Value, String> {
+        let text = text_arg(args, "text")?;
+        let id = args.get("id").cloned().unwrap_or(Value::Null);
+        let erreur = args.get("error").and_then(Value::as_bool).unwrap_or(false);
+        self.bridge
+            .pousser(json!({ "type": "panel_reply", "id": id, "text": text, "error": erreur }))
+            .await?;
+        Ok(json!({ "delivered": true }))
     }
 
     // ── Onglets ─────────────────────────────────────────────────────────────
@@ -558,10 +599,19 @@ fn judgement_tools() -> Vec<Value> {
     ]
 }
 
+/// Outils du panneau du morph : l'hôte les cache au modèle (préfixe `ui_`).
+fn panel_tools() -> Vec<Value> {
+    vec![
+        tool("ui_panel_inbox", "Relève les consignes tapées dans la barre latérale de l'extension (réservé au panneau du morph).", json!({}), &[]),
+        tool("ui_panel_reply", "Renvoie une réponse à la barre latérale de l'extension (réservé au panneau du morph).", json!({ "text": str_prop("Réponse à afficher"), "id": str_prop("Identifiant de la consigne"), "error": { "type": "boolean" } }), &["text"]),
+    ]
+}
+
 pub fn tools_list() -> Value {
     let mut all = tab_tools();
     all.extend(page_tools());
     all.extend(judgement_tools());
+    all.extend(panel_tools());
     json!({ "tools": all })
 }
 
@@ -583,6 +633,8 @@ mod tests {
             "browser_screenshot",
             "browser_goal_reached",
             "browser_assess_action",
+            "ui_panel_inbox",
+            "ui_panel_reply",
         ];
         for t in tools["tools"].as_array().unwrap() {
             let n = t["name"].as_str().unwrap();

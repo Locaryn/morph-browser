@@ -2,7 +2,7 @@
   "$schema": "https://locaryn.dev/schema/morph.json/v0.1",
   "apiVersion": "0.1",
   "name": "morph-browser",
-  "version": "0.1.0-beta.14",
+  "version": "0.1.0-beta.15",
   "description": "Pilote tout le navigateur, pas un seul onglet : retrouve les onglets déjà ouverts, lit, clique, saisit, navigue. Un cadre animé et une pastille signalent chaque onglet contrôlé, avec un bouton Stop. Les décisions rapides (quel élément, quel onglet, action risquée ?) passent par un petit modèle local installé par Locaryn.",
   "author": "Locaryn Team",
   "license": "Apache-2.0",
@@ -32,6 +32,18 @@
     }
   },
   "ui_contributions": {
+    "slots": [
+      {
+        "id": "browser-panel-relay",
+        "slot": "topbar.actions",
+        "order": 90,
+        "type": "custom-element",
+        "entry": "dist/ui.js",
+        "tag": "locaryn-browser-relay",
+        "platforms": ["desktop"],
+        "hint": "Relaie les consignes tapées dans la barre latérale du navigateur vers la conversation ouverte"
+      }
+    ],
     "settings_sections": [
       {
         "id": "liaison",
@@ -53,14 +65,14 @@
               "firefox"
             ],
             "default": "auto",
-            "hint": "« auto » : le navigateur par défaut de l'ordinateur. Enregistrez avant de relier."
+            "hint": "« auto » : un navigateur déjà ouvert, sinon celui de l'ordinateur par défaut. Enregistrez avant de relier."
           },
           {
             "key": "link",
             "label": "Relier au navigateur",
             "kind": "action",
             "tool": "browser_link",
-            "hint": "Ouvre la page où charger l'extension et copie le chemin de son dossier : collez-le dans « Charger l'extension non empaquetée ». Elle se relie seule dans les deux minutes, sans code."
+            "hint": "Ouvre un onglet de guide dans le navigateur (déjà ouvert : pas de nouvelle fenêtre) et copie le chemin du dossier de l'extension : collez-le dans « Charger l'extension non empaquetée ». Elle se relie seule dans les deux minutes, sans code."
           }
         ]
       }
@@ -84,6 +96,14 @@
   "beta": true,
   "stability": "untested",
   "versions": [
+    {
+      "version": "0.1.0-beta.15",
+      "is_beta": true,
+      "summary": "Extension 0.2.0 : barre latérale pour donner des consignes à Locaryn, clic droit « Demander à Locaryn » avec la sélection, rechargement automatique après une mise à jour ; Relier n'ouvre plus de fenêtre en trop et vise un navigateur déjà ouvert",
+      "tag": "v0.1.0-beta.15",
+      "released_at": "2026-11-13",
+      "install_source": "Locaryn/morph-browser#v0.1.0-beta.15"
+    },
     {
       "version": "0.1.0-beta.14",
       "is_beta": true,
