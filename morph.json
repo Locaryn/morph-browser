@@ -2,7 +2,7 @@
   "$schema": "https://locaryn.dev/schema/morph.json/v0.1",
   "apiVersion": "0.1",
   "name": "morph-browser",
-  "version": "0.1.0-beta.15",
+  "version": "0.1.0-beta.16",
   "description": "Pilote tout le navigateur, pas un seul onglet : retrouve les onglets déjà ouverts, lit, clique, saisit, navigue. Un cadre animé et une pastille signalent chaque onglet contrôlé, avec un bouton Stop. Les décisions rapides (quel élément, quel onglet, action risquée ?) passent par un petit modèle local installé par Locaryn.",
   "author": "Locaryn Team",
   "license": "Apache-2.0",
@@ -96,6 +96,14 @@
   "beta": true,
   "stability": "untested",
   "versions": [
+    {
+      "version": "0.1.0-beta.16",
+      "is_beta": true,
+      "summary": "Relier apparie l'extension sans code et sans rien ouvrir quand elle est déjà chargée ; quand Locaryn lance le morph deux fois (application et service), l'instance sans port passe par l'autre au lieu de rester sourde",
+      "tag": "v0.1.0-beta.16",
+      "released_at": "2026-11-13",
+      "install_source": "Locaryn/morph-browser#v0.1.0-beta.16"
+    },
     {
       "version": "0.1.0-beta.15",
       "is_beta": true,

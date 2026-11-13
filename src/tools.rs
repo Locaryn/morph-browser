@@ -48,6 +48,10 @@ pub struct Browser {
 /// Le délai pendant lequel `browser_link` ne relance pas le navigateur.
 const LIAISON_RECENTE: Duration = Duration::from_secs(20);
 
+/// Le temps laissé à une extension déjà chargée pour se relier seule avant
+/// d'ouvrir le guide dans le navigateur.
+const ATTENTE_AVANT_GUIDE: Duration = Duration::from_secs(4);
+
 impl Browser {
     pub async fn new() -> Result<Self, String> {
         let cfg: BrowserConfig = read_config();
@@ -155,6 +159,14 @@ impl Browser {
             }));
         }
         self.bridge.ouvrir_appairage(DUREE_APPAIRAGE).await;
+        // Une extension déjà chargée et en attente se présente toutes les
+        // trois secondes : elle reçoit le code seule, sans rien ouvrir.
+        if self.attendre_la_liaison(ATTENTE_AVANT_GUIDE).await {
+            return Ok(json!({
+                "extension_connected": true,
+                "message": "Extension reliée à Locaryn, sans code à recopier."
+            }));
+        }
         // « auto » ou rien : un navigateur ouvert, sinon celui du système.
         let navigateur = Navigateur::depuis(&choisi).unwrap_or_else(choisir_auto);
         let dossier = dossier_extension(navigateur.dossier);
@@ -183,6 +195,17 @@ impl Browser {
             "extensions_page": navigateur.page,
             "message": consigne(&navigateur, chemin.as_deref(), chemin_copie),
         }))
+    }
+
+    async fn attendre_la_liaison(&self, delai: Duration) -> bool {
+        let fin = Instant::now() + delai;
+        while Instant::now() < fin {
+            if self.bridge.is_connected().await {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        self.bridge.is_connected().await
     }
 
     // ── Barre latérale de l'extension ───────────────────────────────────────

@@ -8,7 +8,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
@@ -49,6 +49,9 @@ pub struct Bridge {
 /// Locaryn est fermé, personne ne les lira.
 const MAX_PANNEAU: usize = 20;
 
+/// Le rythme auquel une instance sans port réessaie de le prendre.
+const REPRISE: Duration = Duration::from_secs(5);
+
 /// Le refus envoyé à une extension qui n'a pas encore de code : elle
 /// réessaie en silence, le journal n'a pas à s'en remplir.
 const SANS_CODE: &str = "en attente d'appairage";
@@ -77,18 +80,66 @@ impl Bridge {
                 tokio::spawn(async move { b.accept_loop(listener).await });
             }
             Err(e) => {
+                // Une autre instance du morph tient le port : on passe par
+                // elle, et l'on reprend le port si elle s'arrête.
                 *bridge.bind_error.lock().await = Some(format!(
-                    "port {port} indisponible ({e}) : une autre instance l'occupe peut-être"
+                    "port {port} tenu par une autre instance du morph ({e}) : les commandes passent par elle"
                 ));
+                let b = bridge.clone();
+                tokio::spawn(async move { b.reprendre_le_port().await });
             }
         }
         bridge
+    }
+
+    /// Réessaie d'écouter tant qu'une autre instance tient le port.
+    async fn reprendre_le_port(self: Arc<Self>) {
+        loop {
+            tokio::time::sleep(REPRISE).await;
+            if let Ok(listener) = TcpListener::bind(("127.0.0.1", self.port)).await {
+                eprintln!("pont navigateur : port {} repris", self.port);
+                *self.bind_error.lock().await = None;
+                self.clone().accept_loop(listener).await;
+                return;
+            }
+        }
+    }
+
+    /// Vrai quand une autre instance du morph tient le port.
+    async fn en_relais(&self) -> bool {
+        self.bind_error.lock().await.is_some()
+    }
+
+    async fn relayer(&self, action: &str, params: Value) -> Result<Value, String> {
+        crate::relais::demander(
+            self.port,
+            &self.token,
+            action,
+            params,
+            DELAI_COMMANDE + Duration::from_secs(5),
+        )
+        .await
+    }
+
+    /// L'état vu par l'instance qui tient le port.
+    async fn etat_relaye(&self) -> Value {
+        self.relayer("status", json!({})).await.unwrap_or_else(|e| {
+            eprintln!("pont navigateur : {e}");
+            json!({ "connected": false })
+        })
     }
 
     /// Ouvre la fenêtre d'appairage : la première extension qui se présente
     /// sans code dans ce délai le reçoit. Le code ne passe jamais par le
     /// modèle de conversation ni par l'écran.
     pub async fn ouvrir_appairage(&self, duree: Duration) {
+        if self.en_relais().await {
+            let params = json!({ "seconds": duree.as_secs() });
+            if let Err(e) = self.relayer("open_pairing", params).await {
+                eprintln!("pont navigateur : appairage non ouvert : {e}");
+            }
+            return;
+        }
         *self.appairage.lock().await = Some(std::time::Instant::now() + duree);
     }
 
@@ -110,16 +161,32 @@ impl Bridge {
     }
 
     pub async fn is_connected(&self) -> bool {
+        if self.en_relais().await {
+            return self.etat_relaye().await["connected"] == json!(true);
+        }
         self.tx.lock().await.is_some()
     }
 
     pub async fn hello(&self) -> Option<Value> {
+        if self.en_relais().await {
+            return Some(self.etat_relaye().await["hello"].clone()).filter(|h| !h.is_null());
+        }
         self.hello.lock().await.clone()
     }
 
     /// Prend les consignes de la barre latérale, et dit à l'extension
     /// qu'elles sont arrivées dans Locaryn.
     pub async fn prendre_messages_panneau(&self) -> Vec<Value> {
+        if self.en_relais().await {
+            return match self.relayer("panel_take", json!({})).await {
+                Ok(Value::Array(pris)) => pris,
+                Ok(_) => Vec::new(),
+                Err(e) => {
+                    eprintln!("pont navigateur : {e}");
+                    Vec::new()
+                }
+            };
+        }
         let pris: Vec<Value> = std::mem::take(&mut *self.panneau.lock().await);
         if !pris.is_empty() {
             let ids: Vec<Value> = pris.iter().filter_map(|m| m.get("id").cloned()).collect();
@@ -135,6 +202,12 @@ impl Bridge {
 
     /// Envoie un message à l'extension sans attendre de réponse.
     pub async fn pousser(&self, message: Value) -> Result<(), String> {
+        if self.en_relais().await {
+            return self
+                .relayer("push", json!({ "message": message }))
+                .await
+                .map(|_| ());
+        }
         let tx = self.tx.lock().await;
         let (_, sender) = tx
             .as_ref()
@@ -187,11 +260,20 @@ impl Bridge {
 
     /// Onglets sur lesquels l'utilisateur a pressé Stop.
     pub async fn blocked_tabs(&self) -> Vec<u64> {
+        if self.en_relais().await {
+            return serde_json::from_value(self.etat_relaye().await["blocked"].clone())
+                .unwrap_or_default();
+        }
         self.blocked.lock().await.clone()
     }
 
     /// Envoie une commande à l'extension et attend sa réponse.
     pub async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+        if self.en_relais().await {
+            return self
+                .relayer("call", json!({ "method": method, "params": params }))
+                .await;
+        }
         let sender = self
             .tx
             .lock()
@@ -224,6 +306,36 @@ impl Bridge {
         }
     }
 
+    /// Exécute ici l'action demandée par une instance sœur sans port.
+    async fn servir_soeur(&self, texte: &str) -> Result<Value, String> {
+        let demande: Value =
+            serde_json::from_str(texte).map_err(|e| format!("relais : demande illisible : {e}"))?;
+        let params = demande.get("params").cloned().unwrap_or(Value::Null);
+        match demande.get("action").and_then(Value::as_str).unwrap_or("") {
+            "status" => Ok(json!({
+                "connected": self.tx.lock().await.is_some(),
+                "hello": self.hello.lock().await.clone(),
+                "blocked": self.blocked.lock().await.clone(),
+            })),
+            "open_pairing" => {
+                let secondes = params["seconds"].as_u64().unwrap_or(120).min(600);
+                *self.appairage.lock().await =
+                    Some(std::time::Instant::now() + Duration::from_secs(secondes));
+                Ok(json!(true))
+            }
+            "call" => {
+                let methode = params["method"].as_str().unwrap_or("").to_string();
+                self.call(&methode, params["params"].clone()).await
+            }
+            "panel_take" => Ok(Value::Array(self.prendre_messages_panneau().await)),
+            "push" => self
+                .pousser(params["message"].clone())
+                .await
+                .map(|_| json!(true)),
+            autre => Err(format!("relais : action inconnue « {autre} »")),
+        }
+    }
+
     async fn accept_loop(self: Arc<Self>, listener: TcpListener) {
         loop {
             match listener.accept().await {
@@ -242,24 +354,51 @@ impl Bridge {
     }
 
     async fn handle(self: Arc<Self>, stream: TcpStream) -> Result<(), String> {
-        let verifier = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
-            let origine = req
-                .headers()
-                .get("origin")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("");
-            if origine_autorisee(origine) {
-                Ok(resp)
-            } else {
-                let mut refus = ErrorResponse::new(Some("origine refusée".into()));
-                *refus.status_mut() = StatusCode::FORBIDDEN;
-                Err(refus)
+        let soeur = Arc::new(AtomicBool::new(false));
+        let soeur_vue = soeur.clone();
+        let jeton_attendu = self.token.clone();
+        let verifier = move |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
+            let entete = |nom: &str| {
+                req.headers()
+                    .get(nom)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string()
+            };
+            let origine = entete("origin");
+            if origine_autorisee(&origine) {
+                return Ok(resp);
             }
+            // Une instance sœur du morph : jamais d'origine (une page web en
+            // envoie toujours une), et le code d'appairage.
+            let jeton = entete(crate::relais::EN_TETE);
+            if origine.is_empty() && jeton_de_soeur_valide(&jeton, &jeton_attendu) {
+                soeur_vue.store(true, Ordering::Relaxed);
+                return Ok(resp);
+            }
+            let mut refus = ErrorResponse::new(Some("origine refusée".into()));
+            *refus.status_mut() = StatusCode::FORBIDDEN;
+            Err(refus)
         };
         let ws = tokio_tungstenite::accept_hdr_async(stream, verifier)
             .await
             .map_err(|e| format!("poignée de main refusée : {e}"))?;
         let (mut sink, mut flux) = ws.split();
+        if soeur.load(Ordering::Relaxed) {
+            let demande = timeout(DELAI_APPAIRAGE, flux.next())
+                .await
+                .map_err(|_| "relais : aucune demande".to_string())?
+                .ok_or("relais : connexion fermée")?
+                .map_err(|e| format!("relais : lecture : {e}"))?;
+            let reponse = match self.servir_soeur(demande.to_text().unwrap_or("")).await {
+                Ok(result) => json!({ "result": result }),
+                Err(e) => json!({ "error": e }),
+            };
+            return sink
+                .send(Message::text(reponse.to_string()))
+                .await
+                .map_err(|e| format!("relais : réponse : {e}"));
+        }
 
         let premier = timeout(DELAI_APPAIRAGE, flux.next())
             .await
@@ -372,6 +511,20 @@ impl Bridge {
     }
 }
 
+/// Le code présenté par une instance sœur : le nôtre, ou celui du fichier si
+/// les deux instances l'ont créé en même temps au premier lancement.
+fn jeton_de_soeur_valide(jeton: &str, le_notre: &str) -> bool {
+    if jeton.len() < 32 {
+        return false;
+    }
+    if jeton == le_notre {
+        return true;
+    }
+    std::fs::read_to_string(data_dir().join("pairing-token"))
+        .map(|t| t.trim() == jeton)
+        .unwrap_or(false)
+}
+
 /// Seules les extensions de navigateur peuvent parler au pont.
 fn origine_autorisee(origine: &str) -> bool {
     origine.starts_with("chrome-extension://") || origine.starts_with("moz-extension://")
@@ -478,5 +631,76 @@ mod tests {
 
         // Une seule extension par ouverture.
         assert_eq!(essai().await["type"], "refused");
+    }
+
+    /// Deux serveurs du morph (bureau et service) pour un port : « Relier »
+    /// sur celui qui n'a pas le port apparie quand même l'extension, et ses
+    /// commandes passent par l'autre.
+    #[tokio::test]
+    async fn l_instance_sans_port_passe_par_celle_qui_l_a() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let code = "d".repeat(40);
+        let proprietaire = Bridge::start(port, code.clone()).await;
+        let soeur = Bridge::start(port, code.clone()).await;
+        assert!(proprietaire.bind_error().await.is_none());
+        assert!(soeur.bind_error().await.is_some());
+        assert!(!soeur.is_connected().await);
+
+        soeur.ouvrir_appairage(Duration::from_secs(30)).await;
+        let mut req = format!("ws://127.0.0.1:{port}")
+            .into_client_request()
+            .unwrap();
+        req.headers_mut()
+            .insert("origin", "chrome-extension://essai".parse().unwrap());
+        let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+        ws.send(Message::text(
+            json!({"type":"hello","token":"","version":"0.2.0"}).to_string(),
+        ))
+        .await
+        .unwrap();
+        let paire: Value =
+            serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+        assert_eq!(paire["type"], "paired");
+        let _accueil = ws.next().await.unwrap().unwrap();
+        assert!(soeur.is_connected().await);
+
+        // Une commande de la sœur arrive à l'extension et revient.
+        let commande = tokio::spawn({
+            let soeur = soeur.clone();
+            async move { soeur.call("tabs_list", json!({})).await }
+        });
+        let recu: Value =
+            serde_json::from_str(ws.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+        assert_eq!(recu["method"], "tabs_list");
+        ws.send(Message::text(
+            json!({"id": recu["id"], "result": {"tabs": []}}).to_string(),
+        ))
+        .await
+        .unwrap();
+        assert_eq!(commande.await.unwrap().unwrap(), json!({"tabs": []}));
+    }
+
+    #[tokio::test]
+    async fn un_faux_code_de_soeur_est_refuse() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let _proprietaire = Bridge::start(port, "e".repeat(40)).await;
+        let r = crate::relais::demander(
+            port,
+            &"f".repeat(40),
+            "status",
+            json!({}),
+            Duration::from_secs(2),
+        )
+        .await;
+        assert!(r.is_err());
     }
 }
